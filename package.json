@@ -1,0 +1,59 @@
+{
+  "name": "@thezelijah/majik-key",
+  "type": "module",
+  "description": "A seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "author": "Zelijah",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jedlsf/majik-key.git"
+  },
+  "keywords": [
+    "seed-phrase",
+    "mnemonic",
+    "bip39",
+    "crypto",
+    "cryptography",
+    "account",
+    "key-generation",
+    "deterministic",
+    "seed",
+    "keypair",
+    "majik-key",
+    "blockchain",
+    "authentication",
+    "security",
+    "ed25519",
+    "key-derivation"
+  ],
+  "homepage": "https://github.com/jedlsf/majik-key#readme",
+  "bugs": {
+    "url": "https://github.com/jedlsf/majik-key/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@scure/bip39": "^1.6.0",
+    "@stablelib/aes": "^2.0.1",
+    "@stablelib/ed25519": "^2.0.2",
+    "@stablelib/gcm": "^2.0.1",
+    "@stablelib/pbkdf2": "^2.0.1",
+    "@stablelib/sha256": "^2.0.1",
+    "@stablelib/x25519": "^2.0.1",
+    "@thezelijah/majik-user": "^1.0.3",
+    "ed2curve": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/ed2curve": "^0.2.4"
+  }
+}
