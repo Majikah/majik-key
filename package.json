@@ -2,7 +2,7 @@
   "name": "@thezelijah/majik-key",
   "type": "module",
   "description": "A seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",

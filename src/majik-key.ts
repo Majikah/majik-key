@@ -20,7 +20,11 @@ import {
   seedArrayToString,
 } from "./core/utils";
 import { wordlist } from "@scure/bip39/wordlists/english";
-import { KEY_ALGO, MAJIK_SALT } from "./core/crypto/constants";
+import {
+  KEY_ALGO,
+  MAJIK_MNEMONIC_SALT,
+  MAJIK_SALT,
+} from "./core/crypto/constants";
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import { MajikKeyJSON, MnemonicJSON } from "./core/types";
@@ -38,6 +42,14 @@ export interface MajikKeyIdentity {
   privateKey: CryptoKey | { raw: Uint8Array };
   encryptedPrivateKey: ArrayBuffer;
   salt: string; // base64 per-identity salt for PBKDF2
+}
+
+export interface SerializedIdentity {
+  id: string;
+  publicKey: string; // base64
+  fingerprint: string;
+  encryptedPrivateKey?: string; // base64
+  salt?: string; // base64 per-identity salt for PBKDF2
 }
 
 export interface MajikKeyConstructorOptions {
@@ -623,6 +635,27 @@ export class MajikKey {
     };
   }
 
+  /**
+   * Convert to internal SerializedIdentity format (for Majik Message).
+   *
+   * @returns SerializedIdentity object
+   */
+  toSerializedIdentity(): SerializedIdentity {
+    if (this.isLocked) {
+      throw new MajikKeyError(
+        "Cannot convert locked MajikKey to SerializedIdentity. Unlock first.",
+      );
+    }
+
+    return {
+      id: this._id,
+      publicKey: this._publicKeyBase64,
+      fingerprint: this._fingerprint,
+      encryptedPrivateKey: this._encryptedPrivateKeyBase64,
+      salt: this._salt,
+    };
+  }
+
   async toMajikMessageIdentity(
     user: MajikUser,
     options?: {
@@ -908,9 +941,7 @@ export class MajikKey {
       }
 
       // Derive AES key from mnemonic
-      const salt = identity.salt
-        ? new Uint8Array(base64ToArrayBuffer(identity.salt))
-        : new TextEncoder().encode(MAJIK_SALT);
+      const salt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
 
       const keyBytes = deriveKeyFromMnemonic(mnemonic, salt);
       const iv = generateRandomBytes(IV_LENGTH);
@@ -983,7 +1014,7 @@ export class MajikKey {
   private static async deriveKeyFromMnemonic(
     mnemonic: string,
   ): Promise<CryptoKey> {
-    const salt = new TextEncoder().encode(MAJIK_SALT);
+    const salt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
     const keyMaterial = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(mnemonic),
