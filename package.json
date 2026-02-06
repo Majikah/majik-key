@@ -15,6 +15,10 @@
     "type": "git",
     "url": "git+https://github.com/jedlsf/majik-key.git"
   },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/jedlsf"
+  },
   "keywords": [
     "seed-phrase",
     "mnemonic",
