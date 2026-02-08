@@ -1,8 +1,8 @@
 {
-  "name": "@thezelijah/majik-key",
+  "name": "@majikah/majik-key",
   "type": "module",
   "description": "A seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.",
-  "version": "1.0.5",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",
@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jedlsf/majik-key.git"
+    "url": "git+https://github.com/Majikah/majik-key.git"
   },
   "funding": {
     "type": "github",
@@ -37,9 +37,9 @@
     "ed25519",
     "key-derivation"
   ],
-  "homepage": "https://github.com/jedlsf/majik-key#readme",
+  "homepage": "https://github.com/Majikah/majik-key#readme",
   "bugs": {
-    "url": "https://github.com/jedlsf/majik-key/issues"
+    "url": "https://github.com/Majikah/majik-key/issues"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

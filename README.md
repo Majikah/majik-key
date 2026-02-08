@@ -1,10 +1,10 @@
 # Majik Key
 
-[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://thezelijah.world)
+[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
 **Majik Key** is a seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.
 
-![npm](https://img.shields.io/npm/v/@thezelijah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@thezelijah/majik-key) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40thezelijah%2Fmajik-key) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
+![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-key) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
 
 
 
@@ -140,7 +140,7 @@ A Majik Key is a seed phrase account that:
 
 ```bash
 # Using npm
-npm install @thezelijah/majik-key
+npm install @majikah/majik-key
 
 ```
 
@@ -149,7 +149,7 @@ npm install @thezelijah/majik-key
 ## Quick Start
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 // Generate a new mnemonic
 const mnemonic = MajikKey.generateMnemonic(); // 12 words
@@ -559,7 +559,7 @@ console.log(key.metadata);
 ### Example 1: Create and Manage a Key
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function createKey() {
   // Generate mnemonic
@@ -593,7 +593,7 @@ createKey();
 ### Example 2: Lock/Unlock Pattern
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function secureLockPattern() {
   const json = localStorage.getItem('myKey');
@@ -633,7 +633,7 @@ secureLockPattern();
 ### Example 3: Backup and Recovery
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function backupAndRecover() {
   const mnemonic = MajikKey.generateMnemonic();
@@ -683,7 +683,7 @@ backupAndRecover();
 ### Example 4: Update Passphrase
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function changePassphrase() {
   const json = localStorage.getItem('myKey');
@@ -713,7 +713,7 @@ changePassphrase();
 ### Example 5: Verify Passphrase
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function verifyPassphrase() {
   const json = localStorage.getItem('myKey');
@@ -744,7 +744,7 @@ Majik Key is fully compatible with **Majik Message** as its seed phrase account 
 ### Importing to Majik Message
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 
 async function importToMajikMessage() {
   // Create or load a Majik Key
@@ -769,7 +769,7 @@ async function importToMajikMessage() {
 ### Converting to Majik Message Identity
 
 ```ts
-import { MajikKey } from '@thezelijah/majik-key';
+import { MajikKey } from '@majikah/majik-key';
 import { MajikUser } from '@thezelijah/majik-user';
 
 async function createMessageIdentity() {
@@ -877,7 +877,8 @@ Secure messaging platform using Majik Keys
 
 Also available on [Microsoft Store](https://apps.microsoft.com/detail/9pmjgvzzjspn) for free.
 
-
+[Official Repository](https://github.com/Majikah/majik-message)
+[SDK Library](https://www.npmjs.com/package/@majikah/majik-message)
 
 ---
 
