@@ -36,6 +36,7 @@ export interface MajikMessageIdentityJSON {
   label: string;
   timestamp: string;
   restricted: boolean;
+  kdfVersion?: number; // undefined → treated as v1 (PBKDF2) for legacy accounts
 }
 
 /**

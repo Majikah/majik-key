@@ -2,7 +2,7 @@
 
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
-**Majik Key** is a seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.
+**Majik Key** is a next-generation seed phrase account library for creating and managing mnemonic-based identities. It provides a post-quantum ready, high-security bridge between BIP39 mnemonics and the Majikah ecosystem.
 
 ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-key) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
 
@@ -10,14 +10,18 @@
 
 ---
 - [Majik Key](#majik-key)
+  - [Next-Gen Security Architecture](#next-gen-security-architecture)
+    - [1. Post-Quantum Ready (ML-KEM)](#1-post-quantum-ready-ml-kem)
+    - [2. Argon2id Key Derivation](#2-argon2id-key-derivation)
+    - [3. Seamless Auto-Migration](#3-seamless-auto-migration)
   - [Overview](#overview)
     - [What is a Majik Key?](#what-is-a-majik-key)
     - [Use Cases](#use-cases)
   - [Features](#features)
-    - [Security First](#security-first)
-    - [BIP39 Compliance](#bip39-compliance)
-    - [Developer Friendly](#developer-friendly)
-    - [Import/Export](#importexport)
+    - [Security \& Post-Quantum Readiness](#security--post-quantum-readiness)
+    - [BIP39 Compliance \& Key Derivation](#bip39-compliance--key-derivation)
+    - [Developer Experience](#developer-experience)
+    - [Import / Export \& Storage](#import--export--storage)
     - [Interoperability](#interoperability)
   - [Installation](#installation)
   - [Quick Start](#quick-start)
@@ -65,7 +69,6 @@
     - [Converting to Majik Message Identity](#converting-to-majik-message-identity)
   - [Security Considerations](#security-considerations)
     - [Best Practices](#best-practices)
-    - [Security Features](#security-features)
     - [What NOT to Do](#what-not-to-do)
     - [What TO Do](#what-to-do)
     - [Tips \& Reminders](#tips--reminders)
@@ -80,7 +83,32 @@
   - [Contact](#contact)
 
 
+
+
 ---
+
+## Next-Gen Security Architecture
+
+Majik Key has been upgraded to meet modern and future cryptographic standards.
+
+### 1. Post-Quantum Ready (ML-KEM)
+Every identity now generates a dual-key system derived deterministically from a 64-byte BIP39 seed:
+* **X25519 (Curve25519):** Derived from the first 32 bytes of the seed. Used for fingerprints, contact identity, and legacy compatibility.
+* **ML-KEM-768 (FIPS-203):** Derived from the full 64-byte seed. Provides post-quantum key encapsulation for "v3" secure envelopes.
+
+### 2. Argon2id Key Derivation
+We have transitioned to **Argon2id** (KDF v2) for encrypting private keys at rest.
+* **Memory-Hard:** Configured with 128 MB of memory, 4 iterations, and 4 parallelism factors.
+* **Brute-Force Resistant:** Engineered to defeat GPU and ASIC-based cracking attempts that easily bypass older PBKDF2 implementations.
+
+### 3. Seamless Auto-Migration
+The library handles "Security Debt" automatically during standard workflows:
+* **On Import:** `importFromMnemonicBackup()` detects v1 (PBKDF2) accounts and performs a full upgrade to v2. 
+* **Deterministic Recovery:** If ML-KEM keys are missing from an old backup, they are re-derived from the mnemonic during the upgrade process.
+* **Password Updates:** Changing a passphrase via `updatePassphrase()` automatically migrates the account to the latest Argon2id standard.
+---
+
+
 
 ## Overview
 
@@ -107,33 +135,35 @@ A Majik Key is a seed phrase account that:
 
 ## Features
 
-### Security First
-- **Encrypted at Rest**: Private keys are encrypted with PBKDF2-derived keys (200,000 iterations)
-- **AES-GCM Encryption**: Industry-standard authenticated encryption
-- **Locked/Unlocked States**: Private keys only exist in memory when explicitly unlocked
-- **Per-Identity Salts**: Each account uses a unique salt for encryption
+### Security & Post-Quantum Readiness
+- **Post-Quantum Ready**: Implements **ML-KEM-768 (FIPS-203)** for key encapsulation, ensuring identities are secure against future quantum computing threats.
+- **Argon2id Key Derivation**: Uses memory-hard **Argon2id** (KDF v2) for passphrase encryption (128 MB / 4 iterations / 4 parallelism), providing industry-leading resistance to GPU/ASIC brute-force attacks.
+- **Seamless Auto-Migration**: Automatically detects and upgrades legacy v1 (PBKDF2) accounts to v2 (Argon2id) during import, re-deriving missing ML-KEM keys deterministically from the seed.
+- **AES-GCM Authenticated Encryption**: Industry-standard encryption for private keys at rest with unique, per-identity salts and random IVs.
+- **Locked/Unlocked States**: Private keys are only decrypted into memory when explicitly unlocked and are purged immediately upon calling `.lock()`.
 
-### BIP39 Compliance
-- **Standard Mnemonic Generation**: Generate 12 or 24-word seed phrases
-- **Mnemonic Validation**: Built-in BIP39 validation
-- **Deterministic Key Derivation**: Same mnemonic always produces the same keys
+### BIP39 Compliance & Key Derivation
+- **Standard Mnemonic Generation**: Generate high-entropy 12 or 24-word seed phrases (128/256-bit strength).
+- **Deterministic Multi-Key Derivation**: 
+    - **X25519 (Curve25519)**: Derived from the first 32 bytes of the seed for legacy compatibility and fingerprints.
+    - **ML-KEM-768**: Derived from the full 64-byte seed for post-quantum security.
+- **Built-in Validation**: Full BIP39 mnemonic validation and error handling.
 
-### Developer Friendly
-- **TypeScript Support**: Full type definitions included
-- **Simple API**: Intuitive CRUD operations
-- **Error Handling**: Comprehensive error messages with `MajikKeyError`
-- **Method Chaining**: Fluent API for common operations
+### Developer Experience
+- **First-Class TypeScript Support**: Full type definitions included for all interfaces and classes.
+- **Fluent API**: Intuitive method chaining for common operations (e.g., `key.unlock(p).updateLabel(l)`).
+- **Comprehensive Error Handling**: Specialized `MajikKeyError` and `CryptoError` classes for precise debugging.
+- **Isomorphic Support**: Works across Node.js and modern browser environments.
 
-### Import/Export
-- **JSON Serialization**: Safe storage format (no private keys exposed)
-- **Mnemonic Backup**: Export/import encrypted backups using mnemonic phrases
-- **MnemonicJSON Format**: Compatible format for seed phrase storage
+### Import / Export & Storage
+- **Security-Minded JSON Serialization**: Export accounts to JSON format for storage without ever exposing raw private keys or seed phrases.
+- **MnemonicJSON Format**: A secure, portable format for seed phrase storage and recovery.
+- **Mnemonic-Encrypted Backups**: Export and import specialized backup strings that utilize the mnemonic as a secondary encryption layer.
 
 ### Interoperability
-- **Majik Message Compatible**: Seamlessly import/export to Majik Message
-- **Majik Contact Integration**: Convert keys to contact format
-- **Majikah Ecosystem**: Works across all Majikah products
-
+- **Majik Message Integration**: Native support for exporting identities compatible with **Majik Message v3** envelopes.
+- **Contact Portability**: Convert Majik Keys directly into contact formats for easy sharing of public identities.
+- **Ecosystem Ready**: Designed as the core identity provider for all current and future Majikah products.
 ---
 
 ## Installation
@@ -156,14 +186,12 @@ const mnemonic = MajikKey.generateMnemonic(); // 12 words
 console.log('Save this mnemonic:', mnemonic);
 
 // Create a new Majik Key (unlocked state)
-const key = await MajikKey.create(
-  mnemonic,
-  'my-secure-passphrase',
-  'My First Key'
-);
+const key = await MajikKey.create(mnemonic, 'secure-passphrase', 'My PQ Account');
 
-console.log('Key ID:', key.id);
+// 2. Access your keys (requires unlock)
 console.log('Fingerprint:', key.fingerprint);
+console.log('PQ Ready:', key.metadata.kdfVersion); // 'argon2id'
+console.log('Key ID:', key.id);
 console.log('Is Unlocked:', key.isUnlocked); // true
 
 // Lock the key (clear private keys from memory)
@@ -194,7 +222,7 @@ await loadedKey.unlock('my-secure-passphrase');
 ### Static Methods
 
 #### `MajikKey.create(mnemonic, passphrase, label?)`
-Create a new Majik Key from a mnemonic phrase.
+Create a new Majik Key from a mnemonic phrase. Generates a new Argon2id-protected account.
 
 **Parameters:**
 - `mnemonic: string` - BIP39 mnemonic phrase (12-24 words)
@@ -230,7 +258,7 @@ await key.unlock('my-password');
 ---
 
 #### `MajikKey.fromMnemonicJSON(mnemonicJson, passphrase, label?)`
-Create a Majik Key from MnemonicJSON format.
+Create a Majik Key from MnemonicJSON format. Auto-migrates legacy PBKDF2 accounts to Argon2id + ML-KEM.
 
 **Parameters:**
 - `mnemonicJson: MnemonicJSON | string` - MnemonicJSON object or string
@@ -253,7 +281,7 @@ const key = await MajikKey.fromMnemonicJSON(mnemonicData, 'my-password');
 ---
 
 #### `MajikKey.importFromMnemonicBackup(backup, mnemonic, passphrase, label?)`
-Import a Majik Key from a mnemonic-encrypted backup.
+Import a Majik Key from a mnemonic-encrypted backup. Auto-migrates legacy PBKDF2 accounts to Argon2id + ML-KEM.
 
 **Parameters:**
 - `backup: string` - Base64-encoded backup string
@@ -310,7 +338,7 @@ const isValid = MajikKey.validateMnemonic('witch collapse practice...');
 ### Instance Methods
 
 #### `unlock(passphrase)`
-Unlock the Majik Key by decrypting the private key.
+Unlock the Majik Key by decrypting the private key. Decrypts X25519 and ML-KEM private keys into memory.
 
 **Parameters:**
 - `passphrase: string` - Passphrase to decrypt the private key
@@ -369,7 +397,7 @@ key.updateLabel('Work Account');
 ---
 
 #### `updatePassphrase(currentPassphrase, newPassphrase)`
-Change the passphrase used to encrypt the private key.
+Change the passphrase used to encrypt the private key. Re-encrypts keys and triggers an auto-migration to KDF v2.
 
 **Parameters:**
 - `currentPassphrase: string` - Current passphrase
@@ -798,23 +826,20 @@ async function createMessageIdentity() {
 
 ### Best Practices
 
-1. **Never expose mnemonics**: Treat mnemonic phrases like passwords. Never log, transmit, or store them unencrypted.
+1. **Never expose mnemonics**: Treat mnemonic phrases like root passwords. Never log or store them unencrypted.
 
-2. **Use strong passphrases**: Choose passphrases with high entropy (mix of letters, numbers, symbols).
+2. **Lock when not in use**: Always call .lock() when private key access is no longer required to purge the heap.
 
-3. **Lock when not in use**: Always lock keys when private key access is not needed.
+3. **PQ Readiness**: For all new communication protocols, ensure you are utilizing the mlKemPublicKey.
 
-4. **Secure storage**: Store JSON exports in secure locations (encrypted databases, secure storage APIs).
+Security Summary
+- **Primary KDF**: Argon2id (128MB / 4t / 4p).
 
-5. **Backup mnemonics**: Store mnemonic phrases in multiple secure locations (password manager, paper backup, hardware wallet).
+- **Legacy KDF**: PBKDF2-SHA256 (250,000 iterations).
 
-### Security Features
+- **Encryption**: AES-256-GCM with unique salts and IVs.
 
-- **PBKDF2 Key Derivation**: 200,000 iterations with SHA-256
-- **AES-GCM Encryption**: Authenticated encryption with random IVs
-- **Per-Identity Salts**: Unique salt for each key prevents rainbow table attacks
-- **No Private Key Exposure**: Private keys never included in JSON exports
-- **Memory Management**: Private keys cleared from memory when locked
+- **Post-Quantum**: ML-KEM-768 (Lattice-based cryptography).
 
 ### What NOT to Do
 

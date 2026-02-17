@@ -1,8 +1,8 @@
 {
   "name": "@majikah/majik-key",
   "type": "module",
-  "description": "A seed phrase account library for creating, managing, and parsing mnemonic-based cryptographic accounts (Majik Keys). Generate deterministic key pairs from BIP39 seed phrases with simple, developer-friendly APIs.",
-  "version": "0.1.1",
+  "description": "A post-quantum ready seed phrase account library for the Majikah ecosystem. Manages deterministic X25519 and ML-KEM-768 identities with Argon2id protection and seamless legacy account migration.",
+  "version": "0.1.2",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",
@@ -47,6 +47,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "@noble/post-quantum": "^0.5.4",
     "@scure/bip39": "^1.6.0",
     "@stablelib/aes": "^2.0.1",
     "@stablelib/ed25519": "^2.0.2",
