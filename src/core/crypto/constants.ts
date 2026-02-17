@@ -42,8 +42,8 @@ export type KDF_VERSION = (typeof KDF_VERSION)[keyof typeof KDF_VERSION];
  */
 export const ARGON2_PARAMS = {
   PASSPHRASE: {
-    m: 131072, // memory in KB (128 MB)
-    t: 4, // time cost (passes)
+    m: 65536, // memory in KB (128 MB)
+    t: 3, // time cost (passes)
     p: 4, // parallelism (lanes)
     dkLen: 32, // output length in bytes (256-bit AES key)
   },
