@@ -98,7 +98,7 @@ Every identity now generates a dual-key system derived deterministically from a 
 
 ### 2. Argon2id Key Derivation
 We have transitioned to **Argon2id** (KDF v2) for encrypting private keys at rest.
-* **Memory-Hard:** Configured with 128 MB of memory, 4 iterations, and 4 parallelism factors.
+* **Memory-Hard:** Configured with 64 MB of memory, 3 iterations, and 4 parallelism factors.
 * **Brute-Force Resistant:** Engineered to defeat GPU and ASIC-based cracking attempts that easily bypass older PBKDF2 implementations.
 
 ### 3. Seamless Auto-Migration
@@ -137,7 +137,7 @@ A Majik Key is a seed phrase account that:
 
 ### Security & Post-Quantum Readiness
 - **Post-Quantum Ready**: Implements **ML-KEM-768 (FIPS-203)** for key encapsulation, ensuring identities are secure against future quantum computing threats.
-- **Argon2id Key Derivation**: Uses memory-hard **Argon2id** (KDF v2) for passphrase encryption (128 MB / 4 iterations / 4 parallelism), providing industry-leading resistance to GPU/ASIC brute-force attacks.
+- **Argon2id Key Derivation**: Uses memory-hard **Argon2id** (KDF v2) for passphrase encryption (64 MB / 3 iterations / 4 parallelism), providing industry-leading resistance to GPU/ASIC brute-force attacks.
 - **Seamless Auto-Migration**: Automatically detects and upgrades legacy v1 (PBKDF2) accounts to v2 (Argon2id) during import, re-deriving missing ML-KEM keys deterministically from the seed.
 - **AES-GCM Authenticated Encryption**: Industry-standard encryption for private keys at rest with unique, per-identity salts and random IVs.
 - **Locked/Unlocked States**: Private keys are only decrypted into memory when explicitly unlocked and are purged immediately upon calling `.lock()`.
@@ -833,7 +833,7 @@ async function createMessageIdentity() {
 3. **PQ Readiness**: For all new communication protocols, ensure you are utilizing the mlKemPublicKey.
 
 Security Summary
-- **Primary KDF**: Argon2id (128MB / 4t / 4p).
+- **Primary KDF**: Argon2id (64 / 3t / 4p).
 
 - **Legacy KDF**: PBKDF2-SHA256 (250,000 iterations).
 

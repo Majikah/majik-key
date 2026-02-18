@@ -2,7 +2,7 @@
   "name": "@majikah/majik-key",
   "type": "module",
   "description": "A post-quantum ready seed phrase account library for the Majikah ecosystem. Manages deterministic X25519 and ML-KEM-768 identities with Argon2id protection and seamless legacy account migration.",
-  "version": "0.1.2",
+  "version": "0.1.8",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",

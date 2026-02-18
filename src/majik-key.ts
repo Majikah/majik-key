@@ -43,6 +43,7 @@ import {
   base64ToUtf8,
   seedStringToArray,
   seedArrayToString,
+  base64ToUint8Array,
 } from "./core/utils";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import {
@@ -72,7 +73,7 @@ export interface MajikKeyIdentity {
   encryptedPrivateKey: ArrayBuffer;
   salt: string;
   kdfVersion: KDF_VERSION;
-  mlKemPublicKey?: Uint8Array;
+  mlKemPublicKey: Uint8Array;
   mlKemSecretKey?: Uint8Array;
 }
 
@@ -96,7 +97,7 @@ export interface MajikKeyConstructorOptions {
   label?: string;
   timestamp?: Date;
   kdfVersion?: KDF_VERSION;
-  mlKemPublicKey?: Uint8Array;
+  mlKemPublicKey: Uint8Array;
   mlKemSecretKey?: Uint8Array;
   encryptedMlKemSecretKey?: ArrayBuffer;
   encryptedMlKemSecretKeyBase64?: string;
@@ -120,7 +121,7 @@ export class MajikKey {
   private _label: string;
   private _kdfVersion: KDF_VERSION;
 
-  private _mlKemPublicKey?: Uint8Array;
+  private _mlKemPublicKey: Uint8Array;
   private _mlKemSecretKey?: Uint8Array;
   private _encryptedMlKemSecretKey?: ArrayBuffer;
   private _encryptedMlKemSecretKeyBase64?: string;
@@ -183,7 +184,7 @@ export class MajikKey {
   get isUnlocked(): boolean {
     return this._privateKey !== undefined;
   }
-  get mlKemPublicKey(): Uint8Array | undefined {
+  get mlKemPublicKey(): Uint8Array {
     return this._mlKemPublicKey;
   }
   get mlKemSecretKey(): Uint8Array | undefined {
@@ -275,12 +276,7 @@ export class MajikKey {
         validated.encryptedPrivateKey,
       );
 
-      let mlKemPublicKey: Uint8Array | undefined;
-      if (anyParsed.mlKemPublicKey) {
-        mlKemPublicKey = new Uint8Array(
-          base64ToArrayBuffer(anyParsed.mlKemPublicKey),
-        );
-      }
+      const mlKemPublicKey = base64ToUint8Array(anyParsed.mlKemPublicKey);
 
       let encryptedMlKemSecretKey: ArrayBuffer | undefined;
       let encryptedMlKemSecretKeyBase64: string | undefined;
@@ -593,11 +589,13 @@ export class MajikKey {
   }
 
   toContact(): MajikContact {
+    const mlKeyBase64 = arrayToBase64(this.mlKemPublicKey);
     return new MajikContact({
       id: this._id,
       publicKey: this._publicKey,
       fingerprint: this._fingerprint,
       meta: { label: this._label },
+      mlKey: mlKeyBase64,
     });
   }
 

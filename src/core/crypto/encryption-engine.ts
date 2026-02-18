@@ -11,7 +11,7 @@ export interface EncryptionIdentity {
   publicKey: CryptoKey | { raw: Uint8Array }; // X25519 public key
   privateKey: CryptoKey | { raw: Uint8Array }; // X25519 private key
   fingerprint: string; // SHA-256 of X25519 public key
-  mlKemPublicKey?: Uint8Array; // ML-KEM-768 public key (1184 bytes)
+  mlKemPublicKey: Uint8Array; // ML-KEM-768 public key (1184 bytes)
   mlKemSecretKey?: Uint8Array; // ML-KEM-768 secret key (2400 bytes)
 }
 
@@ -26,37 +26,33 @@ export class EncryptionEngine {
    * Identity
    * ================================ */
 
-  /* ================================
-   * Identity
-   * ================================ */
+  // /**
+  //  * Generates a random long-term identity keypair (X25519 only).
+  //  * ML-KEM keys are not generated here since random identities
+  //  * cannot be deterministically recovered from a mnemonic.
+  //  */
+  // static async generateIdentity(): Promise<EncryptionIdentity> {
+  //   try {
+  //     const ed = ed25519.generateKeyPair();
+  //     const skCurve = ed2curve.convertSecretKey(ed.secretKey);
+  //     const pkCurve = ed2curve.convertPublicKey(ed.publicKey);
 
-  /**
-   * Generates a random long-term identity keypair (X25519 only).
-   * ML-KEM keys are not generated here since random identities
-   * cannot be deterministically recovered from a mnemonic.
-   */
-  static async generateIdentity(): Promise<EncryptionIdentity> {
-    try {
-      const ed = ed25519.generateKeyPair();
-      const skCurve = ed2curve.convertSecretKey(ed.secretKey);
-      const pkCurve = ed2curve.convertPublicKey(ed.publicKey);
+  //     if (!skCurve || !pkCurve) {
+  //       throw new CryptoError("Failed to convert Ed25519 keys to Curve25519");
+  //     }
 
-      if (!skCurve || !pkCurve) {
-        throw new CryptoError("Failed to convert Ed25519 keys to Curve25519");
-      }
+  //     const pkBytes = new Uint8Array(pkCurve as Uint8Array);
+  //     const skBytes = new Uint8Array(skCurve as Uint8Array);
 
-      const pkBytes = new Uint8Array(pkCurve as Uint8Array);
-      const skBytes = new Uint8Array(skCurve as Uint8Array);
+  //     const publicKey = { type: "public", raw: pkBytes } as any;
+  //     const privateKey = { type: "private", raw: skBytes } as any;
+  //     const fingerprint = fingerprintFromPublicRaw(pkBytes);
 
-      const publicKey = { type: "public", raw: pkBytes } as any;
-      const privateKey = { type: "private", raw: skBytes } as any;
-      const fingerprint = fingerprintFromPublicRaw(pkBytes);
-
-      return { publicKey, privateKey, fingerprint };
-    } catch (err) {
-      throw new CryptoError("Failed to generate identity", err);
-    }
-  }
+  //     return { publicKey, privateKey, fingerprint };
+  //   } catch (err) {
+  //     throw new CryptoError("Failed to generate identity", err);
+  //   }
+  // }
 
   /**
    * Derive a complete identity from a BIP-39 mnemonic.
