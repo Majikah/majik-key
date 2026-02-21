@@ -926,7 +926,7 @@ Made with 💙 by [@thezelijah](https://github.com/jedlsf)
 
 - **Developer**: Josef Elijah Fabian
 - **GitHub**: [https://github.com/jedlsf](https://github.com/jedlsf)
-- **Project Repository**: [https://github.com/jedlsf/majik-key](https://github.com/jedlsf/majik-key)
+- **Project Repository**: [https://github.com/Majikah/majik-key](https://github.com/Majikah/majik-key)
 
 ---
 
