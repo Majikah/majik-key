@@ -7,7 +7,7 @@ import { deriveKey } from "@stablelib/pbkdf2";
 import { hash, SHA256 } from "@stablelib/sha256";
 import * as x25519 from "@stablelib/x25519";
 import { arrayToBase64 } from "../utils";
-import { argon2id } from "@noble/hashes/argon2.js";
+import { argon2id as nobleArgon2id } from "@noble/hashes/argon2.js";
 import { ARGON2_PARAMS } from "./constants";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 
@@ -68,43 +68,128 @@ export function aesGcmDecrypt(
   return gcm.open(iv, ciphertext);
 }
 
+// ─── WASM-first Argon2id with @noble/hashes fallback ─────────────────────────
+
+/**
+ * null  = not yet probed
+ * true  = hash-wasm loaded and verified
+ * false = hash-wasm unavailable or broken — use noble fallback
+ */
+let _wasmAvailable: boolean | null = null;
+
+async function _probeWasm(): Promise<boolean> {
+  try {
+    const { argon2id } = await import("hash-wasm");
+    // Cheap smoke-test: tiny params, just proves the WASM module loads & runs
+    await argon2id({
+      password: new Uint8Array(4),
+      salt: new Uint8Array(8),
+      memorySize: 8,
+      iterations: 1,
+      parallelism: 1,
+      hashLength: 4,
+      outputType: "binary",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function _argon2idWasm(
+  input: Uint8Array,
+  salt: Uint8Array,
+  params: { m: number; t: number; p: number; dkLen: number },
+): Promise<Uint8Array> {
+  const { argon2id } = await import("hash-wasm");
+  return argon2id({
+    password: input,
+    salt,
+    memorySize: params.m, // KB — same unit as noble's m ✓
+    iterations: params.t, // hash-wasm calls it iterations, not t
+    parallelism: params.p, // hash-wasm calls it parallelism, not p
+    hashLength: params.dkLen, // hash-wasm calls it hashLength, not dkLen
+    outputType: "binary",
+  });
+}
+
+function _argon2idNoble(
+  input: Uint8Array,
+  salt: Uint8Array,
+  params: { m: number; t: number; p: number; dkLen: number },
+): Uint8Array {
+  return nobleArgon2id(input, salt, params);
+}
+
+/**
+ * Internal: WASM-first argon2id with automatic noble fallback.
+ * Probes WASM once per session and caches the result.
+ * Falls back silently on any failure — output is always identical.
+ */
+async function _argon2id(
+  input: Uint8Array,
+  salt: Uint8Array,
+  params: { m: number; t: number; p: number; dkLen: number },
+): Promise<Uint8Array> {
+  // First call: probe WASM availability
+  if (_wasmAvailable === null) {
+    _wasmAvailable = await _probeWasm();
+    if (!_wasmAvailable) {
+      console.warn(
+        "[majikah/crypto] hash-wasm unavailable, using @noble/hashes argon2id fallback",
+      );
+    }
+  }
+
+  if (_wasmAvailable) {
+    try {
+      return await _argon2idWasm(input, salt, params);
+    } catch (err) {
+      // WASM loaded but failed at runtime (e.g. OOM, corrupted module)
+      // Flip flag so we stop trying for the rest of this session
+      _wasmAvailable = false;
+      console.warn(
+        "[majikah/crypto] hash-wasm runtime failure, falling back to @noble/hashes",
+        err,
+      );
+    }
+  }
+
+  return _argon2idNoble(input, salt, params);
+}
+
 // ─── KDF v2: Argon2id (current) ───────────────────────────────────────────────
 
 /**
  * Derive a 32-byte AES key from a user passphrase using Argon2id.
- *
- * Use this for all NEW account creation and any re-encryption operations.
- * Works in browser, Node.js, Electron, and Chrome Extension environments.
+ * WASM-accelerated via hash-wasm when available, falls back to @noble/hashes.
  *
  * @param passphrase - The user's passphrase (plaintext string)
  * @param salt       - Per-identity random salt (32 bytes recommended)
  * @returns          - 32-byte key suitable for AES-256-GCM
  */
-export function deriveKeyFromPassphraseArgon2(
+export async function deriveKeyFromPassphraseArgon2(
   passphrase: string,
   salt: Uint8Array,
-): Uint8Array {
+): Promise<Uint8Array> {
   const pw = new TextEncoder().encode(passphrase);
-  return argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
+  return _argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
 }
 
 /**
  * Derive a 32-byte AES key from a BIP-39 mnemonic using Argon2id.
- *
- * Used for encrypting and decrypting mnemonic backup exports.
- * Lower memory parameters than the passphrase KDF because the mnemonic
- * itself provides 128-bit entropy — brute-force is infeasible regardless.
+ * WASM-accelerated via hash-wasm when available, falls back to @noble/hashes.
  *
  * @param mnemonic - The 12-word BIP-39 mnemonic (plaintext string)
  * @param salt     - Domain-separator salt (can be a fixed constant)
  * @returns        - 32-byte key suitable for AES-256-GCM
  */
-export function deriveKeyFromMnemonicArgon2(
+export async function deriveKeyFromMnemonicArgon2(
   mnemonic: string,
   salt: Uint8Array,
-): Uint8Array {
+): Promise<Uint8Array> {
   const m = new TextEncoder().encode(mnemonic);
-  return argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
+  return _argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
 }
 
 // ─── KDF v1: PBKDF2-SHA256 (legacy — do not use for new operations) ───────────

@@ -818,7 +818,7 @@ export class MajikKey {
     passphrase: string,
     salt: Uint8Array,
   ): Promise<{ blob: ArrayBuffer; kdfVersion: KDF_VERSION }> {
-    const keyBytes = deriveKeyFromPassphraseArgon2(passphrase, salt);
+    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
     const iv = generateRandomBytes(IV_LENGTH);
     const ciphertext = aesGcmEncrypt(keyBytes, iv, new Uint8Array(buffer));
     return {
@@ -837,7 +837,7 @@ export class MajikKey {
     passphrase: string,
     salt: Uint8Array,
   ): Promise<ArrayBuffer> {
-    const keyBytes = deriveKeyFromPassphraseArgon2(passphrase, salt);
+    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
     const iv = generateRandomBytes(IV_LENGTH); // different IV from X25519 blob
     const ciphertext = aesGcmEncrypt(keyBytes, iv, mlKemSecretKey);
     return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
@@ -851,7 +851,7 @@ export class MajikKey {
   ): Promise<ArrayBuffer> {
     const keyBytes =
       kdfVersion === KDF_VERSION.ARGON2ID
-        ? deriveKeyFromPassphraseArgon2(passphrase, salt)
+        ? await deriveKeyFromPassphraseArgon2(passphrase, salt)
         : deriveKeyFromPassphrase(passphrase, salt);
 
     const full = new Uint8Array(buffer);
@@ -871,7 +871,7 @@ export class MajikKey {
     salt: Uint8Array,
   ): Promise<Uint8Array> {
     // ML-KEM keys are only ever written by Argon2id (v2) code
-    const keyBytes = deriveKeyFromPassphraseArgon2(passphrase, salt);
+    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
     const full = new Uint8Array(buffer);
     const iv = full.slice(0, IV_LENGTH);
     const ciphertext = full.slice(IV_LENGTH);
@@ -893,7 +893,10 @@ export class MajikKey {
     const mnemonicSalt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
 
     if (backupKdfVersion === KDF_VERSION.ARGON2ID) {
-      const keyBytes = deriveKeyFromMnemonicArgon2(mnemonic, mnemonicSalt);
+      const keyBytes = await deriveKeyFromMnemonicArgon2(
+        mnemonic,
+        mnemonicSalt,
+      );
       const plain = aesGcmDecrypt(keyBytes, iv, new Uint8Array(ciphertext));
       if (!plain)
         throw new MajikKeyError(
@@ -952,7 +955,7 @@ export class MajikKey {
     }
 
     const mnemonicSalt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
-    const keyBytes = deriveKeyFromMnemonicArgon2(mnemonic, mnemonicSalt);
+    const keyBytes = await deriveKeyFromMnemonicArgon2(mnemonic, mnemonicSalt);
     const iv = generateRandomBytes(IV_LENGTH);
     const ciphertext = aesGcmEncrypt(keyBytes, iv, new Uint8Array(privRawBuf));
 
