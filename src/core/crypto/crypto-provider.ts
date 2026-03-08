@@ -10,6 +10,7 @@ import { arrayToBase64 } from "../utils";
 import { argon2id as nobleArgon2id } from "@noble/hashes/argon2.js";
 import { ARGON2_PARAMS } from "./constants";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
+import { argon2id as hashWasmArgon2id } from "hash-wasm";
 
 export const IV_LENGTH = 12;
 
@@ -78,10 +79,12 @@ export function aesGcmDecrypt(
 let _wasmAvailable: boolean | null = null;
 
 async function _probeWasm(): Promise<boolean> {
+  // Never run WASM probe on server — KDF only runs client-side
+  if (typeof window === "undefined") return false;
+
   try {
-    const { argon2id } = await import("hash-wasm");
     // Cheap smoke-test: tiny params, just proves the WASM module loads & runs
-    await argon2id({
+    await hashWasmArgon2id({
       password: new Uint8Array(4),
       salt: new Uint8Array(8),
       memorySize: 8,
@@ -101,14 +104,13 @@ async function _argon2idWasm(
   salt: Uint8Array,
   params: { m: number; t: number; p: number; dkLen: number },
 ): Promise<Uint8Array> {
-  const { argon2id } = await import("hash-wasm");
-  return argon2id({
+  return hashWasmArgon2id({
     password: input,
     salt,
-    memorySize: params.m, // KB — same unit as noble's m ✓
-    iterations: params.t, // hash-wasm calls it iterations, not t
-    parallelism: params.p, // hash-wasm calls it parallelism, not p
-    hashLength: params.dkLen, // hash-wasm calls it hashLength, not dkLen
+    memorySize: params.m,
+    iterations: params.t,
+    parallelism: params.p,
+    hashLength: params.dkLen,
     outputType: "binary",
   });
 }
