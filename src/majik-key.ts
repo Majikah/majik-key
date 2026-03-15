@@ -75,7 +75,18 @@ export interface MajikKeyIdentity {
   kdfVersion: KDF_VERSION;
   mlKemPublicKey: Uint8Array;
   mlKemSecretKey?: Uint8Array;
+
+  edPublicKey?: Uint8Array;
+  edSecretKey?: Uint8Array;
+  mlDsaPublicKey?: Uint8Array;
+  mlDsaSecretKey?: Uint8Array;
 }
+
+export type MajikKeyDerivedIdentity = MajikKeyIdentity & {
+  encryptedMlKemSecretKey: ArrayBuffer;
+  encryptedEdSecretKey: ArrayBuffer;
+  encryptedMlDsaSecretKey: ArrayBuffer;
+};
 
 export interface SerializedIdentity {
   id: string;
@@ -103,6 +114,13 @@ export interface MajikKeyConstructorOptions {
   encryptedMlKemSecretKeyBase64?: string;
   privateKey?: CryptoKey | { raw: Uint8Array };
   privateKeyBase64?: string;
+
+  edPublicKey?: Uint8Array;
+  encryptedEdSecretKey?: ArrayBuffer;
+  encryptedEdSecretKeyBase64?: string;
+  mlDsaPublicKey?: Uint8Array;
+  encryptedMlDsaSecretKey?: ArrayBuffer;
+  encryptedMlDsaSecretKeyBase64?: string;
 }
 
 // ─── MajikKey ─────────────────────────────────────────────────────────────────
@@ -129,6 +147,16 @@ export class MajikKey {
   private _privateKey?: CryptoKey | { raw: Uint8Array };
   private _privateKeyBase64?: string;
 
+  private _edPublicKey?: Uint8Array;
+  private _edSecretKey?: Uint8Array;
+  private _encryptedEdSecretKey?: ArrayBuffer;
+  private _encryptedEdSecretKeyBase64?: string;
+
+  private _mlDsaPublicKey?: Uint8Array;
+  private _mlDsaSecretKey?: Uint8Array;
+  private _encryptedMlDsaSecretKey?: ArrayBuffer;
+  private _encryptedMlDsaSecretKeyBase64?: string;
+
   private constructor(options: MajikKeyConstructorOptions) {
     this._id = options.id;
     this._publicKey = options.publicKey;
@@ -147,6 +175,13 @@ export class MajikKey {
     this._encryptedMlKemSecretKeyBase64 = options.encryptedMlKemSecretKeyBase64;
     this._privateKey = options.privateKey;
     this._privateKeyBase64 = options.privateKeyBase64;
+
+    this._edPublicKey = options.edPublicKey;
+    this._encryptedEdSecretKey = options.encryptedEdSecretKey;
+    this._encryptedEdSecretKeyBase64 = options.encryptedEdSecretKeyBase64;
+    this._mlDsaPublicKey = options.mlDsaPublicKey;
+    this._encryptedMlDsaSecretKey = options.encryptedMlDsaSecretKey;
+    this._encryptedMlDsaSecretKeyBase64 = options.encryptedMlDsaSecretKeyBase64;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -209,6 +244,20 @@ export class MajikKey {
     };
   }
 
+  get edPublicKey(): Uint8Array | undefined {
+    return this._edPublicKey;
+  }
+
+  get mlDsaPublicKey(): Uint8Array | undefined {
+    return this._mlDsaPublicKey;
+  }
+
+  get hasSigningKeys(): boolean {
+    return (
+      this._edPublicKey !== undefined && this._mlDsaPublicKey !== undefined
+    );
+  }
+
   // ── CREATE ──────────────────────────────────────────────────────────────────
 
   static async create(
@@ -255,6 +304,16 @@ export class MajikKey {
         ),
         privateKey: identity.privateKey,
         privateKeyBase64,
+        edPublicKey: identity.edPublicKey,
+        encryptedEdSecretKey: identity.encryptedEdSecretKey,
+        encryptedEdSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedEdSecretKey,
+        ),
+        mlDsaPublicKey: identity.mlDsaPublicKey,
+        encryptedMlDsaSecretKey: identity.encryptedMlDsaSecretKey,
+        encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedMlDsaSecretKey,
+        ),
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -287,6 +346,32 @@ export class MajikKey {
         );
       }
 
+      const edPublicKey = anyParsed.edPublicKey
+        ? base64ToUint8Array(anyParsed.edPublicKey)
+        : undefined;
+
+      let encryptedEdSecretKey: ArrayBuffer | undefined;
+      let encryptedEdSecretKeyBase64: string | undefined;
+      if (anyParsed.encryptedEdSecretKey) {
+        encryptedEdSecretKeyBase64 = anyParsed.encryptedEdSecretKey;
+        encryptedEdSecretKey = base64ToArrayBuffer(
+          anyParsed.encryptedEdSecretKey,
+        );
+      }
+
+      const mlDsaPublicKey = anyParsed.mlDsaPublicKey
+        ? base64ToUint8Array(anyParsed.mlDsaPublicKey)
+        : undefined;
+
+      let encryptedMlDsaSecretKey: ArrayBuffer | undefined;
+      let encryptedMlDsaSecretKeyBase64: string | undefined;
+      if (anyParsed.encryptedMlDsaSecretKey) {
+        encryptedMlDsaSecretKeyBase64 = anyParsed.encryptedMlDsaSecretKey;
+        encryptedMlDsaSecretKey = base64ToArrayBuffer(
+          anyParsed.encryptedMlDsaSecretKey,
+        );
+      }
+
       return new MajikKey({
         id: validated.id,
         publicKey: { raw: new Uint8Array(publicKeyBuffer) },
@@ -304,6 +389,12 @@ export class MajikKey {
         mlKemPublicKey,
         encryptedMlKemSecretKey,
         encryptedMlKemSecretKeyBase64,
+        edPublicKey,
+        encryptedEdSecretKey,
+        encryptedEdSecretKeyBase64,
+        mlDsaPublicKey,
+        encryptedMlDsaSecretKey,
+        encryptedMlDsaSecretKeyBase64,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -412,6 +503,39 @@ export class MajikKey {
         this._encryptedMlKemSecretKeyBase64 = arrayBufferToBase64(encMlKem);
         this._mlKemSecretKey = mlKemSecretKeyBytes;
       }
+
+      if (this._encryptedEdSecretKey) {
+        const edSecretKeyBytes = await MajikKey._decryptSigningKey(
+          this._encryptedEdSecretKey,
+          currentPassphrase,
+          salt,
+        );
+        const encEd = await MajikKey._encryptSigningKey(
+          edSecretKeyBytes,
+          newPassphrase,
+          newSalt,
+        );
+        this._encryptedEdSecretKey = encEd;
+        this._encryptedEdSecretKeyBase64 = arrayBufferToBase64(encEd);
+        this._edSecretKey = edSecretKeyBytes;
+      }
+
+      if (this._encryptedMlDsaSecretKey) {
+        const mlDsaSecretKeyBytes = await MajikKey._decryptSigningKey(
+          this._encryptedMlDsaSecretKey,
+          currentPassphrase,
+          salt,
+        );
+        const encDsa = await MajikKey._encryptSigningKey(
+          mlDsaSecretKeyBytes,
+          newPassphrase,
+          newSalt,
+        );
+        this._encryptedMlDsaSecretKey = encDsa;
+        this._encryptedMlDsaSecretKeyBase64 = arrayBufferToBase64(encDsa);
+        this._mlDsaSecretKey = mlDsaSecretKeyBytes;
+      }
+
       return this;
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -454,10 +578,13 @@ export class MajikKey {
 
   // ── LOCK / UNLOCK ────────────────────────────────────────────────────────────
 
+  // required
   lock(): this {
     this._privateKey = undefined;
     this._privateKeyBase64 = undefined;
     this._mlKemSecretKey = undefined;
+    this._edSecretKey = undefined; // ADD
+    this._mlDsaSecretKey = undefined; // ADD
     return this;
   }
 
@@ -500,6 +627,23 @@ export class MajikKey {
           salt,
         );
       }
+
+      if (this._encryptedEdSecretKey) {
+        this._edSecretKey = await MajikKey._decryptSigningKey(
+          this._encryptedEdSecretKey,
+          passphrase,
+          salt,
+        );
+      }
+
+      if (this._encryptedMlDsaSecretKey) {
+        this._mlDsaSecretKey = await MajikKey._decryptSigningKey(
+          this._encryptedMlDsaSecretKey,
+          passphrase,
+          salt,
+        );
+      }
+
       return this;
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -547,6 +691,26 @@ export class MajikKey {
     return this._mlKemSecretKey;
   }
 
+  getEdSecretKey(): Uint8Array {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._edSecretKey)
+      throw new MajikKeyError(
+        "No Ed25519 secret key — re-import via importFromMnemonicBackup() for full migration.",
+      );
+    return this._edSecretKey;
+  }
+
+  getMlDsaSecretKey(): Uint8Array {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._mlDsaSecretKey)
+      throw new MajikKeyError(
+        "No ML-DSA secret key — re-import via importFromMnemonicBackup() for full migration.",
+      );
+    return this._mlDsaSecretKey;
+  }
+
   // ── SERIALIZATION ────────────────────────────────────────────────────────────
 
   toJSON(): MajikKeyJSON {
@@ -564,6 +728,14 @@ export class MajikKey {
         ? arrayToBase64(this._mlKemPublicKey)
         : undefined,
       encryptedMlKemSecretKey: this._encryptedMlKemSecretKeyBase64,
+      edPublicKey: this._edPublicKey
+        ? arrayToBase64(this._edPublicKey)
+        : undefined,
+      encryptedEdSecretKey: this._encryptedEdSecretKeyBase64,
+      mlDsaPublicKey: this._mlDsaPublicKey
+        ? arrayToBase64(this._mlDsaPublicKey)
+        : undefined,
+      encryptedMlDsaSecretKey: this._encryptedMlDsaSecretKeyBase64,
     };
   }
 
@@ -746,6 +918,16 @@ export class MajikKey {
         ),
         privateKey: identity.privateKey,
         privateKeyBase64,
+        edPublicKey: identity.edPublicKey,
+        encryptedEdSecretKey: identity.encryptedEdSecretKey,
+        encryptedEdSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedEdSecretKey,
+        ),
+        mlDsaPublicKey: identity.mlDsaPublicKey,
+        encryptedMlDsaSecretKey: identity.encryptedMlDsaSecretKey,
+        encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedMlDsaSecretKey,
+        ),
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -758,7 +940,7 @@ export class MajikKey {
   private static async _deriveAndEncryptFromMnemonic(
     mnemonic: string,
     passphrase: string,
-  ): Promise<MajikKeyIdentity & { encryptedMlKemSecretKey: ArrayBuffer }> {
+  ): Promise<MajikKeyDerivedIdentity> {
     const encIdentity =
       await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
 
@@ -797,6 +979,21 @@ export class MajikKey {
       salt,
     );
 
+    // after the existing ML-KEM encryption block:
+    const edSecretKey = encIdentity.edSecretKey;
+    const encryptedEdSecretKey = await MajikKey._encryptSigningKey(
+      edSecretKey,
+      passphrase,
+      salt,
+    );
+
+    const mlDsaSecretKey = encIdentity.mlDsaSecretKey;
+    const encryptedMlDsaSecretKey = await MajikKey._encryptSigningKey(
+      mlDsaSecretKey,
+      passphrase,
+      salt,
+    );
+
     return {
       id: encIdentity.fingerprint,
       publicKey: encIdentity.publicKey,
@@ -808,6 +1005,12 @@ export class MajikKey {
       mlKemPublicKey: encIdentity.mlKemPublicKey,
       mlKemSecretKey,
       encryptedMlKemSecretKey,
+      edPublicKey: encIdentity.edPublicKey,
+      edSecretKey,
+      encryptedEdSecretKey,
+      mlDsaPublicKey: encIdentity.mlDsaPublicKey,
+      mlDsaSecretKey,
+      encryptedMlDsaSecretKey,
     };
   }
 
@@ -840,6 +1043,17 @@ export class MajikKey {
     const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
     const iv = generateRandomBytes(IV_LENGTH); // different IV from X25519 blob
     const ciphertext = aesGcmEncrypt(keyBytes, iv, mlKemSecretKey);
+    return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
+  }
+
+  private static async _encryptSigningKey(
+    keyBytes_: Uint8Array,
+    passphrase: string,
+    salt: Uint8Array,
+  ): Promise<ArrayBuffer> {
+    const aesKey = await deriveKeyFromPassphraseArgon2(passphrase, salt);
+    const iv = generateRandomBytes(IV_LENGTH);
+    const ciphertext = aesGcmEncrypt(aesKey, iv, keyBytes_);
     return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
   }
 
@@ -877,6 +1091,20 @@ export class MajikKey {
     const ciphertext = full.slice(IV_LENGTH);
     const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
     if (!plain) throw new MajikKeyError("Failed to decrypt ML-KEM secret key");
+    return plain;
+  }
+
+  private static async _decryptSigningKey(
+    buffer: ArrayBuffer,
+    passphrase: string,
+    salt: Uint8Array,
+  ): Promise<Uint8Array> {
+    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
+    const full = new Uint8Array(buffer);
+    const iv = full.slice(0, IV_LENGTH);
+    const ciphertext = full.slice(IV_LENGTH);
+    const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
+    if (!plain) throw new MajikKeyError("Failed to decrypt signing key");
     return plain;
   }
 

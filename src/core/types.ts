@@ -18,6 +18,11 @@ export interface MajikKeyJSON {
   kdfVersion?: number; // undefined → treated as v1 (PBKDF2) for legacy accounts
   mlKemPublicKey?: string;
   encryptedMlKemSecretKey?: string;
+
+  edPublicKey?: string;
+  encryptedEdSecretKey?: string;
+  mlDsaPublicKey?: string;
+  encryptedMlDsaSecretKey?: string;
 }
 
 export interface MajikKeyMetadata {

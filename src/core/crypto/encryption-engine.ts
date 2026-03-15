@@ -2,11 +2,15 @@
 import { mnemonicToSeedSync } from "@scure/bip39";
 import * as ed25519 from "@stablelib/ed25519";
 import ed2curve from "ed2curve";
+import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
 
 import {
   deriveMlKemKeypairFromSeed,
   fingerprintFromPublicRaw,
 } from "./crypto-provider";
+import { concatUint8Arrays } from "../utils";
+import { hash } from "@stablelib/sha256";
+import { MAJIK_SIGNATURE_SEED } from "./constants";
 
 export interface EncryptionIdentity {
   publicKey: CryptoKey | { raw: Uint8Array }; // X25519 public key
@@ -14,6 +18,11 @@ export interface EncryptionIdentity {
   fingerprint: string; // SHA-256 of X25519 public key
   mlKemPublicKey: Uint8Array; // ML-KEM-768 public key (1184 bytes)
   mlKemSecretKey?: Uint8Array; // ML-KEM-768 secret key (2400 bytes)
+  // ... existing fields ...
+  edPublicKey: Uint8Array; // Ed25519, 32 bytes — for signing
+  edSecretKey: Uint8Array; // Ed25519, 64 bytes — for signing
+  mlDsaPublicKey: Uint8Array; // ML-DSA-87, 2592 bytes
+  mlDsaSecretKey: Uint8Array; // ML-DSA-87, 4896 bytes
 }
 
 /**
@@ -82,12 +91,24 @@ export class EncryptionEngine {
       // seed[32..64] → implicit rejection parameter z (stored in secretKey)
       const mlKemKeypair = deriveMlKemKeypairFromSeed(seed64);
 
+      const mlDsaSeed = hash(
+        concatUint8Arrays(
+          seed64,
+          new TextEncoder().encode(MAJIK_SIGNATURE_SEED),
+        ),
+      ); // 32 bytes, deterministic, domain-separated
+
+      const mlDsaKeypair = ml_dsa87.keygen(mlDsaSeed);
       return {
         publicKey,
         privateKey,
         fingerprint,
         mlKemPublicKey: mlKemKeypair.publicKey, // 1184 bytes
         mlKemSecretKey: mlKemKeypair.secretKey, // 2400 bytes
+        edPublicKey: ed.publicKey, // 32 bytes
+        edSecretKey: ed.secretKey, // 64 bytes
+        mlDsaPublicKey: mlDsaKeypair.publicKey, // 2592 bytes
+        mlDsaSecretKey: mlDsaKeypair.secretKey, // 4896 bytes
       };
     } catch (err) {
       throw new CryptoError("Failed to derive identity from mnemonic", err);
