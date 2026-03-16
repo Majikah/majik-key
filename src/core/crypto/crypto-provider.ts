@@ -66,7 +66,8 @@ export function aesGcmDecrypt(
 ): Uint8Array | null {
   const aes = new AES(keyBytes);
   const gcm = new GCM(aes);
-  return gcm.open(iv, ciphertext);
+  const result = gcm.open(iv, ciphertext);
+  return result ? result.slice() : null;
 }
 
 // ─── WASM-first Argon2id with @noble/hashes fallback ─────────────────────────
@@ -175,7 +176,8 @@ export async function deriveKeyFromPassphraseArgon2(
   salt: Uint8Array,
 ): Promise<Uint8Array> {
   const pw = new TextEncoder().encode(passphrase);
-  return _argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
+  const result = await _argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
+  return result.slice(); // ← force a copy out of WASM memory
 }
 
 /**
@@ -191,7 +193,8 @@ export async function deriveKeyFromMnemonicArgon2(
   salt: Uint8Array,
 ): Promise<Uint8Array> {
   const m = new TextEncoder().encode(mnemonic);
-  return _argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
+  const result = await _argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
+  return result.slice(); // ← force a copy out of WASM memory
 }
 
 // ─── KDF v1: PBKDF2-SHA256 (legacy — do not use for new operations) ───────────
