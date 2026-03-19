@@ -56,7 +56,7 @@
     "@stablelib/pbkdf2": "^2.0.1",
     "@stablelib/sha256": "^2.0.1",
     "@stablelib/x25519": "^2.0.1",
-    "@thezelijah/majik-user": "^1.0.3",
+    "@thezelijah/majik-user": "^1.0.6",
     "ed2curve": "^0.3.0",
     "hash-wasm": "^4.12.0"
   },
