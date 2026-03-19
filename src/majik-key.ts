@@ -768,6 +768,12 @@ export class MajikKey {
       fingerprint: this._fingerprint,
       meta: { label: this._label },
       mlKey: mlKeyBase64,
+      edPublicKeyBase64: this._edPublicKey
+        ? arrayToBase64(this._edPublicKey)
+        : undefined,
+      mlDsaPublicKeyBase64: this._mlDsaPublicKey
+        ? arrayToBase64(this._mlDsaPublicKey)
+        : undefined,
     });
   }
 

@@ -13,8 +13,9 @@ export type SerializedMajikContact = {
   publicKeyBase64: string;
   mlKey: string;
   majikah_registered?: boolean;
+  edPublicKeyBase64?: string; // Ed25519 public key, base64 (32 bytes)
+  mlDsaPublicKeyBase64?: string; // ML-DSA-87 public key, base64 (2592 bytes)
 };
-
 
 export interface MajikContactMeta {
   label?: string;
@@ -32,6 +33,8 @@ export interface MajikContactData {
   mlKey: string;
   meta?: MajikContactMeta;
   majikah_registered?: boolean;
+  edPublicKeyBase64?: string; // Ed25519 public key, base64 (32 bytes)
+  mlDsaPublicKeyBase64?: string; // ML-DSA-87 public key, base64 (2592 bytes)
 }
 
 export interface MajikContactCard {
@@ -40,6 +43,8 @@ export interface MajikContactCard {
   fingerprint: string;
   label: string;
   mlKey: string;
+  edPublicKeyBase64?: string; // Ed25519 public key, base64 (32 bytes)
+  mlDsaPublicKeyBase64?: string; // ML-DSA-87 public key, base64 (2592 bytes)
 }
 
 /* -------------------------------
@@ -64,6 +69,10 @@ export class MajikContact {
   public readonly publicKey: CryptoKey | { raw: Uint8Array };
   public readonly fingerprint: string;
   public readonly mlKey: string;
+
+  public readonly edPublicKeyBase64: string;
+  public readonly mlDsaPublicKeyBase64: string;
+
   public meta: MajikContactMeta;
   private majikah_registered?: boolean;
 
@@ -77,6 +86,8 @@ export class MajikContact {
     this.publicKey = data.publicKey;
     this.fingerprint = data.fingerprint;
     this.mlKey = data.mlKey;
+    this.edPublicKeyBase64 = data.edPublicKeyBase64 || "";
+    this.mlDsaPublicKeyBase64 = data.mlDsaPublicKeyBase64 || "";
 
     this.meta = {
       label: data.meta?.label || "",
@@ -222,6 +233,8 @@ export class MajikContact {
       publicKeyBase64: await this.getPublicKeyBase64(),
       majikah_registered: this.majikah_registered,
       mlKey: this.mlKey,
+      edPublicKeyBase64: this.edPublicKeyBase64,
+      mlDsaPublicKeyBase64: this.mlDsaPublicKeyBase64,
     };
   }
 
@@ -241,6 +254,8 @@ export class MajikContact {
         publicKey: { raw: publicKeyRaw },
         majikah_registered: serialized.majikah_registered,
         mlKey: serialized.mlKey,
+        edPublicKeyBase64: serialized.edPublicKeyBase64,
+        mlDsaPublicKeyBase64: serialized.mlDsaPublicKeyBase64,
       });
     } catch (err) {
       throw new MajikContactError("Failed to deserialize MajikContact", err);
