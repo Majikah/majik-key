@@ -121,6 +121,9 @@ export interface MajikKeyConstructorOptions {
   mlDsaPublicKey?: Uint8Array;
   encryptedMlDsaSecretKey?: ArrayBuffer;
   encryptedMlDsaSecretKeyBase64?: string;
+
+  edSecretKey?: Uint8Array;
+  mlDsaSecretKey?: Uint8Array;
 }
 
 // ─── MajikKey ─────────────────────────────────────────────────────────────────
@@ -182,6 +185,9 @@ export class MajikKey {
     this._mlDsaPublicKey = options.mlDsaPublicKey;
     this._encryptedMlDsaSecretKey = options.encryptedMlDsaSecretKey;
     this._encryptedMlDsaSecretKeyBase64 = options.encryptedMlDsaSecretKeyBase64;
+
+    this._edSecretKey = options.edSecretKey;
+    this._mlDsaSecretKey = options.mlDsaSecretKey;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -314,6 +320,9 @@ export class MajikKey {
         encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
           identity.encryptedMlDsaSecretKey,
         ),
+
+        edSecretKey: identity.edSecretKey,
+        mlDsaSecretKey: identity.mlDsaSecretKey,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -934,6 +943,8 @@ export class MajikKey {
         encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
           identity.encryptedMlDsaSecretKey,
         ),
+        edSecretKey: identity.edSecretKey,
+        mlDsaSecretKey: identity.mlDsaSecretKey,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
