@@ -33,7 +33,7 @@ import {
   IV_LENGTH,
 } from "./core/crypto/crypto-provider";
 import { EncryptionEngine } from "./core/crypto/encryption-engine";
-import { MajikContact } from "./core/majik-contact";
+import { MajikContact } from "@majikah/majik-contact";
 import {
   arrayBufferToBase64,
   arrayToBase64,

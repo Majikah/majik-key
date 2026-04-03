@@ -2,7 +2,7 @@ import { MajikUser } from "@thezelijah/majik-user";
 
 import { hash } from "@stablelib/sha256";
 import { arrayToBase64 } from "../../utils";
-import { SerializedMajikContact } from "../../majik-contact";
+import { SerializedMajikContact } from "@majikah/majik-contact";
 
 /**
  * Utility assertions
