@@ -1,6 +1,3 @@
-import { validateMnemonic } from "@scure/bip39";
-import { wordlist } from "@scure/bip39/wordlists/english";
-
 /* -------------------------------
  * Validators
  * ------------------------------- */
@@ -17,10 +14,6 @@ export class MajikKeyValidator {
     const trimmed = mnemonic.trim();
     if (!trimmed) {
       throw new MajikKeyError("Mnemonic cannot be empty or whitespace");
-    }
-
-    if (!validateMnemonic(trimmed, wordlist)) {
-      throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
     }
   }
 

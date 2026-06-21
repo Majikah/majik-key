@@ -1,3 +1,5 @@
+import { MnemonicLanguage } from "./crypto/wordlist";
+
 export type ISODateString = string;
 
 export type MajikMessageAccountID = string;
@@ -15,7 +17,7 @@ export interface MajikKeyJSON {
   salt: string; // base64
   backup: string; // base64
   timestamp: string; // ISO 8601
-  kdfVersion?: number; // undefined → treated as v1 (PBKDF2) for legacy accounts
+  kdfVersion?: number;
   mlKemPublicKey?: string;
   encryptedMlKemSecretKey?: string;
 
@@ -23,6 +25,8 @@ export interface MajikKeyJSON {
   encryptedEdSecretKey?: string;
   mlDsaPublicKey?: string;
   encryptedMlDsaSecretKey?: string;
+
+  mnemonicLanguage?: MnemonicLanguage;
 }
 
 export interface MajikKeyMetadata {
@@ -33,6 +37,7 @@ export interface MajikKeyMetadata {
   isLocked: boolean;
   kdfVersion: number;
   hasMlKem: boolean;
+  mnemonicLanguage?: MnemonicLanguage;
 }
 
 export interface MnemonicJSON {

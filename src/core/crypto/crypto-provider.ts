@@ -152,7 +152,7 @@ async function _argon2id(
       // Flip flag so we stop trying for the rest of this session
       _wasmAvailable = false;
       console.warn(
-        "[majikah/crypto] hash-wasm runtime failure, falling back to @noble/hashes",
+        "[majikah/majik-key/crypto] hash-wasm runtime failure, falling back to @noble/hashes",
         err,
       );
     }

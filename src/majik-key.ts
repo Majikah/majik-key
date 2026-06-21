@@ -22,7 +22,10 @@
  *   No partial migration — either fully upgraded or not upgraded yet.
  */
 
-import { generateMnemonic } from "@scure/bip39";
+import {
+  generateMnemonic as bip39GenerateMnemonic,
+  validateMnemonic,
+} from "@scure/bip39";
 import {
   aesGcmDecrypt,
   aesGcmEncrypt,
@@ -45,7 +48,7 @@ import {
   seedArrayToString,
   base64ToUint8Array,
 } from "./core/utils";
-import { wordlist } from "@scure/bip39/wordlists/english";
+
 import {
   KDF_VERSION,
   KEY_ALGO,
@@ -60,6 +63,7 @@ import type {
 } from "./core/types";
 import { MajikMessageIdentity } from "./core/database/system/identity";
 import { MajikUser } from "@thezelijah/majik-user";
+import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist";
 
 const SALT_SIZE = 32;
 
@@ -124,6 +128,8 @@ export interface MajikKeyConstructorOptions {
 
   edSecretKey?: Uint8Array;
   mlDsaSecretKey?: Uint8Array;
+
+  mnemonicLanguage?: MnemonicLanguage;
 }
 
 // ─── MajikKey ─────────────────────────────────────────────────────────────────
@@ -135,6 +141,7 @@ export class MajikKey {
   private readonly _fingerprint: string;
   private readonly _backup: string;
   private readonly _timestamp: Date;
+  private readonly _mnemonicLanguage: MnemonicLanguage;
 
   private _encryptedPrivateKey: ArrayBuffer;
   private _encryptedPrivateKeyBase64: string;
@@ -188,6 +195,8 @@ export class MajikKey {
 
     this._edSecretKey = options.edSecretKey;
     this._mlDsaSecretKey = options.mlDsaSecretKey;
+
+    this._mnemonicLanguage = options.mnemonicLanguage || "en";
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -206,6 +215,9 @@ export class MajikKey {
   }
   get label(): string {
     return this._label;
+  }
+  get mnemonicLanguage(): MnemonicLanguage {
+    return this._mnemonicLanguage;
   }
   get backup(): string {
     return this._backup;
@@ -247,6 +259,7 @@ export class MajikKey {
       isLocked: this.isLocked,
       kdfVersion: this.kdfVersion,
       hasMlKem: this.hasMlKem,
+      mnemonicLanguage: this.mnemonicLanguage || "en",
     };
   }
 
@@ -270,11 +283,18 @@ export class MajikKey {
     mnemonic: string,
     passphrase: string,
     label?: string,
+    mnemonicLanguage: MnemonicLanguage = "en",
   ): Promise<MajikKey> {
     try {
       MajikKeyValidator.validateMnemonic(mnemonic);
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
+
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+
+      if (!validateMnemonic(mnemonic, wordlist)) {
+        throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
+      }
 
       const identity = await MajikKey._deriveAndEncryptFromMnemonic(
         mnemonic,
@@ -323,6 +343,7 @@ export class MajikKey {
 
         edSecretKey: identity.edSecretKey,
         mlDsaSecretKey: identity.mlDsaSecretKey,
+        mnemonicLanguage: mnemonicLanguage
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -404,6 +425,7 @@ export class MajikKey {
         mlDsaPublicKey,
         encryptedMlDsaSecretKey,
         encryptedMlDsaSecretKeyBase64,
+        mnemonicLanguage: validated?.mnemonicLanguage || "en",
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -745,6 +767,7 @@ export class MajikKey {
         ? arrayToBase64(this._mlDsaPublicKey)
         : undefined,
       encryptedMlDsaSecretKey: this._encryptedMlDsaSecretKeyBase64,
+      mnemonicLanguage: this._mnemonicLanguage,
     };
   }
 
@@ -754,10 +777,19 @@ export class MajikKey {
 
   // ── UTILITY ──────────────────────────────────────────────────────────────────
 
-  static generateMnemonic(strength: 128 | 256 = 128): string {
+  static async generateMnemonic(
+    strength: 128 | 256 = 128,
+    language: MnemonicLanguage = "en",
+  ): Promise<string> {
     if (strength !== 128 && strength !== 256)
       throw new MajikKeyError("Strength must be 128 or 256");
-    return generateMnemonic(wordlist, strength);
+
+    const loader = WORDLISTS[language];
+    if (!loader) throw new MajikKeyError("Unsupported language");
+
+    const wordlist = await MajikKey._getWordlist(language);
+
+    return bip39GenerateMnemonic(wordlist, strength);
   }
 
   static validateMnemonic(mnemonic: string): boolean {
@@ -858,6 +890,7 @@ export class MajikKey {
     mnemonic: string,
     passphrase: string,
     label?: string,
+    mnemonicLanguage: MnemonicLanguage = "en",
   ): Promise<MajikKey> {
     try {
       if (!backup || typeof backup !== "string")
@@ -865,6 +898,12 @@ export class MajikKey {
       MajikKeyValidator.validateMnemonic(mnemonic);
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
+
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+
+      if (!validateMnemonic(mnemonic, wordlist)) {
+        throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
+      }
 
       const backupJson = base64ToUtf8(backup);
       const parsed = JSON.parse(backupJson) as {
@@ -953,6 +992,14 @@ export class MajikKey {
   }
 
   // ── PRIVATE: Core Derivation ─────────────────────────────────────────────────
+
+  private static async _getWordlist(
+    language: MnemonicLanguage,
+  ): Promise<string[]> {
+    const loader = WORDLISTS[language] ?? WORDLISTS.en;
+    const mod = await loader();
+    return mod.wordlist;
+  }
 
   private static async _deriveAndEncryptFromMnemonic(
     mnemonic: string,
