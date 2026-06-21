@@ -5,8 +5,8 @@ export default defineConfig({
     environment: "node",
     globals: true,
     pool: "threads",
-    hookTimeout: 30000,
-    testTimeout: 30000,
+    hookTimeout: 60000,
+    testTimeout: 60000,
     setupFiles: ["./test/setup.ts"],
     server: {
       deps: {

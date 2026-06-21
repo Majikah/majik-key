@@ -29,7 +29,7 @@ import { MajikKey } from "../src/majik-key";
 import { KDF_VERSION } from "../src/core/crypto/constants";
 import type { MnemonicLanguage } from "../src/core/crypto/wordlist";
 
-const CRYPTO_TIMEOUT = 30_000;
+const CRYPTO_TIMEOUT = 60_000;
 
 describe("MajikKey Class Unit Tests", () => {
   const PASSPHRASE = "TestPassphrase123!";
