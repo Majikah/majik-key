@@ -36,7 +36,7 @@ import {
   IV_LENGTH,
 } from "./core/crypto/crypto-provider";
 import { EncryptionEngine } from "./core/crypto/encryption-engine";
-import { MajikContact } from "@majikah/majik-contact";
+import { MajikContact, MajikContactMeta } from "@majikah/majik-contact";
 import {
   arrayBufferToBase64,
   arrayToBase64,
@@ -343,7 +343,7 @@ export class MajikKey {
 
         edSecretKey: identity.edSecretKey,
         mlDsaSecretKey: identity.mlDsaSecretKey,
-        mnemonicLanguage: mnemonicLanguage
+        mnemonicLanguage: mnemonicLanguage,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -801,13 +801,26 @@ export class MajikKey {
     }
   }
 
-  toContact(): MajikContact {
+  /**
+   * Converts the MajikKey to a MajikContact.
+   * You can pass a custom metadata type if needed, e.g., toContact<MyMeta>()
+   */
+  toContact<TMeta extends MajikContactMeta = MajikContactMeta>(
+    initialMeta?: Partial<TMeta>,
+  ): MajikContact<TMeta> {
     const mlKeyBase64 = arrayToBase64(this.mlKemPublicKey);
-    return new MajikContact({
+
+    // We construct the base metadata and merge with any provided initialMeta
+    const meta: Partial<TMeta> = {
+      label: this._label,
+      ...initialMeta,
+    } as Partial<TMeta>;
+
+    return new MajikContact<TMeta>({
       id: this._id,
       publicKey: this._publicKey,
       fingerprint: this._fingerprint,
-      meta: { label: this._label },
+      meta: meta,
       mlKey: mlKeyBase64,
       edPublicKeyBase64: this._edPublicKey
         ? arrayToBase64(this._edPublicKey)

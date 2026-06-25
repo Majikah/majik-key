@@ -50,7 +50,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@majikah/majik-contact": "^0.0.4",
+    "@majikah/majik-contact": "^0.0.6",
     "@noble/hashes": "^2.2.0",
     "@noble/post-quantum": "^0.6.1",
     "@scure/bip39": "^2.2.0",
