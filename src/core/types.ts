@@ -29,6 +29,13 @@ export interface MajikKeyJSON {
   mnemonicLanguage?: MnemonicLanguage;
 }
 
+export interface MajikKeyDangerousJSON extends MajikKeyJSON {
+  privateKeyBase64: string;
+  mlKemSecretKeyBase64: string;
+  edSecretKeyBase64: string;
+  mlDsaSecretKeyBase64: string;
+}
+
 export interface MajikKeyMetadata {
   id: string;
   fingerprint: string;

@@ -57,6 +57,7 @@ import {
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import type {
+  MajikKeyDangerousJSON,
   MajikKeyJSON,
   MajikKeyMetadata,
   MnemonicJSON,
@@ -430,6 +431,99 @@ export class MajikKey {
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError("Failed to parse MajikKey from JSON", err);
+    }
+  }
+
+  /**
+   * Export a fully unlocked MajikKey with all raw private keys.
+   * ⚠️ DANGEROUS — output contains unencrypted private key material.
+   * Only use for server-side secrets injection.
+   * Never log, store in a database, or transmit over the network.
+   */
+  toDangerousJSON(): MajikKeyDangerousJSON {
+    if (this.isLocked)
+      throw new MajikKeyError(
+        "MajikKey must be unlocked to export dangerous JSON.",
+      );
+    if (
+      !this._edSecretKey ||
+      !this._mlDsaSecretKey ||
+      !this._mlKemSecretKey ||
+      !this._privateKeyBase64
+    )
+      throw new MajikKeyError(
+        "MajikKey is missing secret keys — re-import via importFromMnemonicBackup() first.",
+      );
+
+    return {
+      ...this.toJSON(),
+      privateKeyBase64: this._privateKeyBase64,
+      mlKemSecretKeyBase64: arrayToBase64(this._mlKemSecretKey),
+      edSecretKeyBase64: arrayToBase64(this._edSecretKey),
+      mlDsaSecretKeyBase64: arrayToBase64(this._mlDsaSecretKey),
+    };
+  }
+
+  /**
+   * Reconstruct a fully unlocked MajikKey from a dangerous JSON export.
+   * ⚠️ DANGEROUS — input contains unencrypted private key material.
+   * Intended for server-side use only (e.g. TSA signing key loaded from Cloudflare Secrets).
+   * No KDF is involved — reconstruction is instant.
+   */
+  static fromDangerousJSON(json: MajikKeyDangerousJSON | string): MajikKey {
+    try {
+      const parsed: MajikKeyDangerousJSON =
+        typeof json === "string" ? JSON.parse(json) : json;
+
+      if (
+        !parsed.id ||
+        !parsed.fingerprint ||
+        !parsed.publicKey ||
+        !parsed.privateKeyBase64 ||
+        !parsed.edPublicKey ||
+        !parsed.edSecretKeyBase64 ||
+        !parsed.mlDsaPublicKey ||
+        !parsed.mlDsaSecretKeyBase64 ||
+        !parsed.mlKemPublicKey ||
+        !parsed.mlKemSecretKeyBase64
+      )
+        throw new MajikKeyError(
+          "Invalid MajikKeyDangerousJSON — missing required fields",
+        );
+
+      const privateKeyBytes = base64ToUint8Array(parsed.privateKeyBase64);
+      const edPublicKey = base64ToUint8Array(parsed.edPublicKey);
+      const edSecretKey = base64ToUint8Array(parsed.edSecretKeyBase64);
+      const mlDsaPublicKey = base64ToUint8Array(parsed.mlDsaPublicKey);
+      const mlDsaSecretKey = base64ToUint8Array(parsed.mlDsaSecretKeyBase64);
+      const mlKemPublicKey = base64ToUint8Array(parsed.mlKemPublicKey);
+      const mlKemSecretKey = base64ToUint8Array(parsed.mlKemSecretKeyBase64);
+
+      return new MajikKey({
+        id: parsed.id,
+        fingerprint: parsed.fingerprint,
+        publicKey: { raw: base64ToUint8Array(parsed.publicKey) },
+        publicKeyBase64: parsed.publicKey,
+        privateKey: { raw: privateKeyBytes },
+        privateKeyBase64: parsed.privateKeyBase64,
+        encryptedPrivateKey: new ArrayBuffer(0),
+        encryptedPrivateKeyBase64: parsed.encryptedPrivateKey,
+        salt: parsed.salt,
+        backup: parsed.backup,
+        kdfVersion: (parsed?.kdfVersion as KDF_VERSION) || KDF_VERSION.ARGON2ID,
+        mlKemPublicKey,
+        mlKemSecretKey,
+        edPublicKey,
+        edSecretKey,
+        mlDsaPublicKey,
+        mlDsaSecretKey,
+      });
+    } catch (err) {
+      if (err instanceof MajikKeyError) throw err;
+      throw new MajikKeyError(
+        "Failed to reconstruct MajikKey from dangerous JSON",
+        err,
+      );
     }
   }
 
