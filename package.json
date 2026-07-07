@@ -60,14 +60,23 @@
     "@stablelib/pbkdf2": "^2.0.1",
     "@stablelib/sha256": "^2.0.1",
     "@stablelib/x25519": "^2.0.1",
-    "@thezelijah/majik-user": "^1.0.6",
+    "@thezelijah/majik-user": "^1.0.9",
     "ed2curve": "^0.3.0",
     "hash-wasm": "^4.12.0"
   },
   "devDependencies": {
+    "@solana/kit": "^7.0.0",
     "@types/ed2curve": "^0.2.4",
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.1.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "peerDependencies": {
+    "@solana/kit": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@solana/kit": {
+      "optional": true
+    }
   }
 }

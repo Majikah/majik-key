@@ -1,0 +1,1 @@
+export const MAJIK_SOLANA_SEED = "MajikKeySolanaSeed";

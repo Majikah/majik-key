@@ -65,6 +65,16 @@ import type {
 import { MajikMessageIdentity } from "./core/database/system/identity";
 import { MajikUser } from "@thezelijah/majik-user";
 import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist";
+import {
+  deriveSolanaKeypairFromEdSecretKey,
+  signWithSolanaMaterial,
+  solanaAddressFromPublicKey,
+  SolanaKeypairMaterial,
+  solanaMaterialFromEd25519SecretKey,
+  toSolanaAddress,
+  toSolanaKeyPairSigner,
+} from "./core/web3/solana";
+import { MajikKeyWeb3Namespace } from "./core/web3/types";
 
 const SALT_SIZE = 32;
 
@@ -167,6 +177,9 @@ export class MajikKey {
   private _mlDsaSecretKey?: Uint8Array;
   private _encryptedMlDsaSecretKey?: ArrayBuffer;
   private _encryptedMlDsaSecretKeyBase64?: string;
+
+  //Experimental
+  private _solanaKeypairMaterial?: SolanaKeypairMaterial;
 
   private constructor(options: MajikKeyConstructorOptions) {
     this._id = options.id;
@@ -708,8 +721,9 @@ export class MajikKey {
     this._privateKey = undefined;
     this._privateKeyBase64 = undefined;
     this._mlKemSecretKey = undefined;
-    this._edSecretKey = undefined; // ADD
-    this._mlDsaSecretKey = undefined; // ADD
+    this._edSecretKey = undefined;
+    this._mlDsaSecretKey = undefined;
+    this._solanaKeypairMaterial = undefined;
     return this;
   }
 
@@ -1398,5 +1412,95 @@ export class MajikKey {
       return arrayBufferToBase64(anyKey.raw.buffer);
     const raw = await crypto.subtle.exportKey("raw", key as CryptoKey);
     return arrayBufferToBase64(raw);
+  }
+
+  // ── WEB3 (EXPERIMENTAL) ─────────────────────────────────────────────────────
+
+  /**
+   * @experimental Blockchain/web3 integrations are experimental — this API
+   * may change without notice. `undefined` when the MajikKey is locked or
+   * has no Ed25519 signing key to derive from.
+   *
+   * By default `web3.solana` is DOMAIN-SEPARATED from the MajikKey's message
+   * signing key (see deriveSolanaKeypairFromEdSecretKey). Use
+   * `getSolanaKeypairMaterial({ reuseMessageKey: true })` if you specifically
+   * want the identical key reused for Solana instead.
+   */
+  get web3(): MajikKeyWeb3Namespace | undefined {
+    if (!this.hasSolanaKeypair) return undefined;
+
+    const material = this._getOrDeriveSolanaMaterial();
+    return {
+      solana: {
+        publicKey: material.publicKey,
+        secretKey: material.secretKey,
+        address: solanaAddressFromPublicKey(material.publicKey),
+        getSolanaKeypair: () => toSolanaKeyPairSigner(material),
+        getSolanaAddress: () => toSolanaAddress(material),
+        sign: (message: Uint8Array) =>
+          signWithSolanaMaterial(material, message),
+      },
+    };
+  }
+
+  /**
+   * @experimental True if this MajikKey can currently produce a Solana
+   * keypair (i.e. it's unlocked and has an Ed25519 signing key).
+   */
+  get hasSolanaKeypair(): boolean {
+    return this.isUnlocked && this._edSecretKey !== undefined;
+  }
+
+  private _getOrDeriveSolanaMaterial(): SolanaKeypairMaterial {
+    if (!this._edSecretKey)
+      throw new MajikKeyError(
+        "No Ed25519 secret key — MajikKey must be unlocked and have signing keys.",
+      );
+    if (!this._solanaKeypairMaterial) {
+      this._solanaKeypairMaterial = deriveSolanaKeypairFromEdSecretKey(
+        this._edSecretKey,
+      );
+    }
+    return this._solanaKeypairMaterial;
+  }
+
+  /**
+   * @experimental Raw Solana keypair material (public/secret key bytes).
+   * Pass `{ reuseMessageKey: true }` to reuse the MajikKey's message signing
+   * Ed25519 key directly instead of the domain-separated derivation.
+   */
+  getSolanaKeypairMaterial(options?: {
+    reuseMessageKey?: boolean;
+  }): SolanaKeypairMaterial {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._edSecretKey)
+      throw new MajikKeyError(
+        "No Ed25519 secret key — re-import via importFromMnemonicBackup() first.",
+      );
+    if (options?.reuseMessageKey) {
+      return solanaMaterialFromEd25519SecretKey(this._edSecretKey);
+    }
+    return this._getOrDeriveSolanaMaterial();
+  }
+
+  /**
+   * @experimental Real @solana/kit Keypair instance. Lazily loads
+   * @solana/kit — throws a MajikKeyError with install instructions if
+   * it isn't present in the consuming project.
+   */
+  async getSolanaKeypair(options?: {
+    reuseMessageKey?: boolean;
+  }): Promise<any> {
+    return toSolanaKeyPairSigner(this.getSolanaKeypairMaterial(options));
+  }
+
+  /**
+   * @experimental Base58 Solana address. Does NOT require @solana/kit.
+   */
+  getSolanaAddress(options?: { reuseMessageKey?: boolean }): string {
+    return solanaAddressFromPublicKey(
+      this.getSolanaKeypairMaterial(options).publicKey,
+    );
   }
 }
