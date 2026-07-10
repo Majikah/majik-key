@@ -26,6 +26,9 @@ export interface MajikKeyJSON {
   mlDsaPublicKey?: string;
   encryptedMlDsaSecretKey?: string;
 
+  btcPublicKey?: string;
+  encryptedBtcSecretKey?: string;
+
   mnemonicLanguage?: MnemonicLanguage;
 }
 
@@ -34,6 +37,7 @@ export interface MajikKeyDangerousJSON extends MajikKeyJSON {
   mlKemSecretKeyBase64: string;
   edSecretKeyBase64: string;
   mlDsaSecretKeyBase64: string;
+  btcSecretKeyBase64?: string;
 }
 
 export interface MajikKeyMetadata {
@@ -44,6 +48,10 @@ export interface MajikKeyMetadata {
   isLocked: boolean;
   kdfVersion: number;
   hasMlKem: boolean;
+  web3: {
+    hasBitcoin?: boolean;
+    hasSolana?: boolean;
+  };
   mnemonicLanguage?: MnemonicLanguage;
 }
 

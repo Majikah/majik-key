@@ -47,12 +47,18 @@
     "prepublishOnly": "npm run build",
     "package": "npm run build && npm version patch && git push && git push --tags",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:web3:bitcoin": "npx vitest test/majik-key-bitcoin.test.ts",
+    "test:web3:solana": "npx vitest test/majik-key-solana.test.ts",
+    "test:web3": "npx vitest test/majik-key-bitcoin.test.ts test/majik-key-solana.test.ts",
+    "test:core": "npx vitest test/majik-key.test.ts"
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.0.6",
+    "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@noble/post-quantum": "^0.6.1",
+    "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^2.2.0",
     "@stablelib/aes": "^2.0.1",
     "@stablelib/ed25519": "^2.1.0",
@@ -65,6 +71,7 @@
     "hash-wasm": "^4.12.0"
   },
   "devDependencies": {
+    "@scure/btc-signer": "^2.2.0",
     "@solana/kit": "^7.0.0",
     "@types/ed2curve": "^0.2.4",
     "@types/node": "^26.1.0",
@@ -72,10 +79,14 @@
     "vitest": "^4.1.9"
   },
   "peerDependencies": {
+    "@scure/btc-signer": "^2.2.0",
     "@solana/kit": "^7.0.0"
   },
   "peerDependenciesMeta": {
     "@solana/kit": {
+      "optional": true
+    },
+    "@scure/btc-signer": {
       "optional": true
     }
   }

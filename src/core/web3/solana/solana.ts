@@ -29,7 +29,8 @@
 import * as ed25519 from "@stablelib/ed25519";
 import { hash } from "@stablelib/sha256";
 import { MAJIK_SOLANA_SEED } from "./constants";
-import { MajikKeyError } from "../error";
+import { MajikKeyError } from "../../error";
+import { base58Encode } from "../utils";
 
 const ED25519_SECRET_KEY_LENGTH = 64;
 const ED25519_SEED_LENGTH = 32;
@@ -92,37 +93,6 @@ export function solanaMaterialFromEd25519SecretKey(
   };
 }
 
-// ─── Base58 (Solana address encoding) — no external dependency ─────────────
-
-const BASE58_ALPHABET =
-  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-export function base58Encode(bytes: Uint8Array): string {
-  if (bytes.length === 0) return "";
-
-  const digits: number[] = [0];
-  for (let i = 0; i < bytes.length; i++) {
-    let carry = bytes[i];
-    for (let j = 0; j < digits.length; j++) {
-      carry += digits[j] << 8;
-      digits[j] = carry % 58;
-      carry = (carry / 58) | 0;
-    }
-    while (carry > 0) {
-      digits.push(carry % 58);
-      carry = (carry / 58) | 0;
-    }
-  }
-
-  let leadingZeros = 0;
-  for (let i = 0; i < bytes.length && bytes[i] === 0; i++) leadingZeros++;
-
-  let result = "1".repeat(leadingZeros);
-  for (let i = digits.length - 1; i >= 0; i--) {
-    result += BASE58_ALPHABET[digits[i]];
-  }
-  return result;
-}
 
 /**
  * Solana address for a given Solana/Ed25519 public key — just its base58
@@ -165,7 +135,9 @@ export async function loadSolanaKit(): Promise<SolanaKitModule> {
  */
 export async function toSolanaKeyPairSigner(
   material: SolanaKeypairMaterial,
-): Promise<Awaited<ReturnType<SolanaKitModule["createKeyPairSignerFromBytes"]>>> {
+): Promise<
+  Awaited<ReturnType<SolanaKitModule["createKeyPairSignerFromBytes"]>>
+> {
   const kit = await loadSolanaKit();
   return kit.createKeyPairSignerFromBytes(material.secretKey);
 }

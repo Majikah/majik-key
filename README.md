@@ -1,936 +1,295 @@
 # Majik Key
 
-[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
+[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
+![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Majik Key** is a next-generation seed phrase account library for creating and managing mnemonic-based identities. It provides a post-quantum ready, high-security bridge between BIP39 mnemonics and the Majikah ecosystem.
-
-![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-key) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
-
-
-
----
-- [Majik Key](#majik-key)
-  - [Next-Gen Security Architecture](#next-gen-security-architecture)
-    - [1. Post-Quantum Ready (ML-KEM)](#1-post-quantum-ready-ml-kem)
-    - [2. Argon2id Key Derivation](#2-argon2id-key-derivation)
-    - [3. Seamless Auto-Migration](#3-seamless-auto-migration)
-  - [Overview](#overview)
-    - [What is a Majik Key?](#what-is-a-majik-key)
-    - [Use Cases](#use-cases)
-  - [Features](#features)
-    - [Security \& Post-Quantum Readiness](#security--post-quantum-readiness)
-    - [BIP39 Compliance \& Key Derivation](#bip39-compliance--key-derivation)
-    - [Developer Experience](#developer-experience)
-    - [Import / Export \& Storage](#import--export--storage)
-    - [Interoperability](#interoperability)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [API Reference](#api-reference)
-    - [Static Methods](#static-methods)
-      - [`MajikKey.create(mnemonic, passphrase, label?)`](#majikkeycreatemnemonic-passphrase-label)
-      - [`MajikKey.fromJSON(json)`](#majikkeyfromjsonjson)
-      - [`MajikKey.fromMnemonicJSON(mnemonicJson, passphrase, label?)`](#majikkeyfrommnemonicjsonmnemonicjson-passphrase-label)
-      - [`MajikKey.importFromMnemonicBackup(backup, mnemonic, passphrase, label?)`](#majikkeyimportfrommnemonicbackupbackup-mnemonic-passphrase-label)
-      - [`MajikKey.generateMnemonic(strength?)`](#majikkeygeneratemnemonicstrength)
-      - [`MajikKey.validateMnemonic(mnemonic)`](#majikkeyvalidatemnemonicmnemonic)
-    - [Instance Methods](#instance-methods)
-      - [`unlock(passphrase)`](#unlockpassphrase)
-      - [`lock()`](#lock)
-      - [`verify(passphrase)`](#verifypassphrase)
-      - [`updateLabel(newLabel)`](#updatelabelnewlabel)
-      - [`updatePassphrase(currentPassphrase, newPassphrase)`](#updatepassphrasecurrentpassphrase-newpassphrase)
-      - [`getPrivateKey()`](#getprivatekey)
-      - [`getPrivateKeyBase64()`](#getprivatekeybase64)
-      - [`toJSON()`](#tojson)
-      - [`toString(pretty?)`](#tostringpretty)
-      - [`toMnemonicJSON(mnemonic, passphrase?)`](#tomnemonicjsonmnemonic-passphrase)
-      - [`exportMnemonicBackup(mnemonic)`](#exportmnemonicbackupmnemonic)
-      - [`toContact()`](#tocontact)
-      - [`toMajikMessageIdentity(user, options?)`](#tomajikmessageidentityuser-options)
-    - [Getters](#getters)
-      - [`id: string`](#id-string)
-      - [`fingerprint: string`](#fingerprint-string)
-      - [`publicKey: CryptoKey | { raw: Uint8Array }`](#publickey-cryptokey---raw-uint8array-)
-      - [`publicKeyBase64: string`](#publickeybase64-string)
-      - [`label: string`](#label-string)
-      - [`backup: string`](#backup-string)
-      - [`timestamp: Date`](#timestamp-date)
-      - [`isLocked: boolean`](#islocked-boolean)
-      - [`isUnlocked: boolean`](#isunlocked-boolean)
-      - [`metadata: MajikKeyMetadata`](#metadata-majikkeymetadata)
-  - [Usage Examples](#usage-examples)
-    - [Example 1: Create and Manage a Key](#example-1-create-and-manage-a-key)
-    - [Example 2: Lock/Unlock Pattern](#example-2-lockunlock-pattern)
-    - [Example 3: Backup and Recovery](#example-3-backup-and-recovery)
-    - [Example 4: Update Passphrase](#example-4-update-passphrase)
-    - [Example 5: Verify Passphrase](#example-5-verify-passphrase)
-  - [Integration with Majik Message](#integration-with-majik-message)
-    - [Importing to Majik Message](#importing-to-majik-message)
-    - [Converting to Majik Message Identity](#converting-to-majik-message-identity)
-  - [Security Considerations](#security-considerations)
-    - [Best Practices](#best-practices)
-    - [What NOT to Do](#what-not-to-do)
-    - [What TO Do](#what-to-do)
-    - [Tips \& Reminders](#tips--reminders)
-      - [For Developers](#for-developers)
-      - [For Users](#for-users)
-  - [Related Projects](#related-projects)
-    - [Majik Message](#majik-message)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [Author](#author)
-  - [About the Developer](#about-the-developer)
-  - [Contact](#contact)
-
-
-
+**Majik Key** is a next-generation seed phrase account library for creating and managing mnemonic-based identities. It serves as a post-quantum ready, high-security bridge between BIP39 mnemonics and the broader Majikah ecosystem.
 
 ---
 
 ## Next-Gen Security Architecture
 
-Majik Key has been upgraded to meet modern and future cryptographic standards.
+Majik Key is engineered to meet and exceed modern cryptographic standards. 
 
-### 1. Post-Quantum Ready (ML-KEM)
-Every identity now generates a dual-key system derived deterministically from a 64-byte BIP39 seed:
-* **X25519 (Curve25519):** Derived from the first 32 bytes of the seed. Used for fingerprints, contact identity, and legacy compatibility.
-* **ML-KEM-768 (FIPS-203):** Derived from the full 64-byte seed. Provides post-quantum key encapsulation for "v3" secure envelopes.
-
-### 2. Argon2id Key Derivation
-We have transitioned to **Argon2id** (KDF v2) for encrypting private keys at rest.
-* **Memory-Hard:** Configured with 64 MB of memory, 3 iterations, and 4 parallelism factors.
-* **Brute-Force Resistant:** Engineered to defeat GPU and ASIC-based cracking attempts that easily bypass older PBKDF2 implementations.
-
-### 3. Seamless Auto-Migration
-The library handles "Security Debt" automatically during standard workflows:
-* **On Import:** `importFromMnemonicBackup()` detects v1 (PBKDF2) accounts and performs a full upgrade to v2. 
-* **Deterministic Recovery:** If ML-KEM keys are missing from an old backup, they are re-derived from the mnemonic during the upgrade process.
-* **Password Updates:** Changing a passphrase via `updatePassphrase()` automatically migrates the account to the latest Argon2id standard.
+*   **Self-Encrypted at Rest:** Majik Keys are self-encrypted by default. Private keys are **always Argon2id hashed at rest**, which completely protects them from unauthorized access even if the underlying storage medium is compromised.
+*   **Post-Quantum Ready (ML-KEM):** Generates a deterministic dual-key system from a 64-byte BIP39 seed, featuring **X25519** for legacy compatibility and **ML-KEM-768 (FIPS-203)** for post-quantum key encapsulation.
+*   **Argon2id Key Derivation:** Private keys at rest are protected by memory-hard **Argon2id (KDF v2)**, configured to defeat GPU/ASIC brute-force attacks (64 MB memory / 3 iterations / 4 parallelism).
+*   **Seamless Auto-Migration:** Automatically detects and upgrades legacy v1 (PBKDF2) accounts to v2 upon import, deterministically re-deriving missing ML-KEM keys from the seed.
+   
 ---
 
+## The Majik Key
 
+```mermaid
+flowchart TD
+    A[12-word BIP-39 Seed Phrase] --> B[Majik Key]
+
+    %% Signing branch
+    B --> S[Signing]
+    S --> S1[Ed25519]
+    S --> S2[ML-DSA-87]
+
+    %% Encryption branch
+    B --> E[Encryption]
+    E --> E1[ML-KEM-768]
+    E --> E2[AES-256-GCM]
+
+    %% Identity branch
+    B --> I[Identity]
+    I --> I1[BIP-39]
+    I --> I2[X25519]
+
+    %% Products (fan-in)
+    S1 --> P1[Majik Signature]
+    S2 --> P1
+
+    S1 --> P2[Majik Buwiz]
+    S2 --> P2
+    E1 --> P2
+    E2 --> P2
+    I1 --> P2
+    I2 --> P2
+
+    E1 --> P3[Majik Message]
+    E2 --> P3
+
+    I1 --> P4[Majik Universal ID]
+    I2 --> P4
+
+    P4 --> P5[Majik SLink]
+
+```
+
+Your Majik Key is generated entirely offline. No network request is made during key creation — verifiable in source code.
+
+---
+
+## Experimental Web3 Support
+
+Majik Key features experimental integration for deriving keys natively compatible with modern Web3 ecosystems, specifically **Bitcoin** and **Solana**. 
+
+To utilize these features, you must install the optional peer dependencies associated with your target chain:
+
+### Bitcoin
+Requires the `@scure/btc-signer` peer dependency.
+```bash
+npm install @scure/btc-signer
+```
+
+### Solana
+Requires the `@solana/kit` peer dependency.
+```bash
+npm install @solana/kit
+```
+
+---
 
 ## Overview
 
-**Majik Key** is a comprehensive library for managing seed phrase-based cryptographic accounts. It provides a secure, intuitive way to create, store, and manage mnemonic-based identities with built-in encryption, backup, and recovery features.
-
-### What is a Majik Key?
-
-A Majik Key is a seed phrase account that:
-- Derives cryptographic key pairs from BIP39 mnemonic phrases
-- Encrypts private keys at rest with a user-defined passphrase
-- Supports secure backup and recovery via mnemonic encryption
-- Provides locked/unlocked state management for enhanced security
-- Is fully compatible with **Majik Message** and other Majikah products
+Majik Key provides a secure, intuitive way to create, store, and manage mnemonic-based cryptographic identities. 
 
 ### Use Cases
-
-- **Majik Message Integration**: Create seed phrase accounts that can be imported directly into Majik Message
-- **Cryptographic Identity Management**: Manage multiple identities with deterministic key derivation
-- **Secure Messaging**: Generate signing keys for end-to-end encrypted communication
-- **Blockchain Applications**: Create wallet-like accounts from mnemonic phrases
-- **Majikah Ecosystem**: Use across all Majikah products and services
+*   **Majik Message Integration:** Natively generate identities compatible with Majik Message v3 secure envelopes.
+*   **Cryptographic Identity Management:** Manage multiple identities with deterministic multi-key derivation.
+*   **Secure Storage & Recovery:** Built-in AES-GCM authenticated encryption for private keys at rest, with secure backup/recovery workflows.
 
 ---
 
 ## Features
 
-### Security & Post-Quantum Readiness
-- **Post-Quantum Ready**: Implements **ML-KEM-768 (FIPS-203)** for key encapsulation, ensuring identities are secure against future quantum computing threats.
-- **Argon2id Key Derivation**: Uses memory-hard **Argon2id** (KDF v2) for passphrase encryption (64 MB / 3 iterations / 4 parallelism), providing industry-leading resistance to GPU/ASIC brute-force attacks.
-- **Seamless Auto-Migration**: Automatically detects and upgrades legacy v1 (PBKDF2) accounts to v2 (Argon2id) during import, re-deriving missing ML-KEM keys deterministically from the seed.
-- **AES-GCM Authenticated Encryption**: Industry-standard encryption for private keys at rest with unique, per-identity salts and random IVs.
-- **Locked/Unlocked States**: Private keys are only decrypted into memory when explicitly unlocked and are purged immediately upon calling `.lock()`.
+*   **Maximum Security:** ML-KEM-768 readiness and Argon2id derivation. Private keys are purged from memory immediately upon calling `.lock()`.
+*   **BIP39 Compliance:** High-entropy 12 or 24-word seed generation with built-in validation.
+*   **Isomorphic DX:** First-class TypeScript support, fluent method chaining, and compatibility across Node.js and modern browsers.
+*   **Portable Storage:** Safe JSON serialization and MnemonicJSON formats that never expose raw private keys.
 
-### BIP39 Compliance & Key Derivation
-- **Standard Mnemonic Generation**: Generate high-entropy 12 or 24-word seed phrases (128/256-bit strength).
-- **Deterministic Multi-Key Derivation**: 
-    - **X25519 (Curve25519)**: Derived from the first 32 bytes of the seed for legacy compatibility and fingerprints.
-    - **ML-KEM-768**: Derived from the full 64-byte seed for post-quantum security.
-- **Built-in Validation**: Full BIP39 mnemonic validation and error handling.
-
-### Developer Experience
-- **First-Class TypeScript Support**: Full type definitions included for all interfaces and classes.
-- **Fluent API**: Intuitive method chaining for common operations (e.g., `key.unlock(p).updateLabel(l)`).
-- **Comprehensive Error Handling**: Specialized `MajikKeyError` and `CryptoError` classes for precise debugging.
-- **Isomorphic Support**: Works across Node.js and modern browser environments.
-
-### Import / Export & Storage
-- **Security-Minded JSON Serialization**: Export accounts to JSON format for storage without ever exposing raw private keys or seed phrases.
-- **MnemonicJSON Format**: A secure, portable format for seed phrase storage and recovery.
-- **Mnemonic-Encrypted Backups**: Export and import specialized backup strings that utilize the mnemonic as a secondary encryption layer.
-
-### Interoperability
-- **Majik Message Integration**: Native support for exporting identities compatible with **Majik Message v3** envelopes.
-- **Contact Portability**: Convert Majik Keys directly into contact formats for easy sharing of public identities.
-- **Ecosystem Ready**: Designed as the core identity provider for all current and future Majikah products.
 ---
 
 ## Installation
 
 ```bash
-# Using npm
 npm install @majikah/majik-key
-
 ```
 
 ---
 
-## Quick Start
+## Quick Start (Core Identity)
 
-```ts
+Get up and running with a secure, unlockable account in seconds.
+
+```typescript
 import { MajikKey } from '@majikah/majik-key';
 
-// Generate a new mnemonic
-const mnemonic = MajikKey.generateMnemonic(); // 12 words
-console.log('Save this mnemonic:', mnemonic);
+// 1. Generate & Create
+const mnemonic = MajikKey.generateMnemonic(); // Generates 12 words
+const key = await MajikKey.create(mnemonic, 'super-secure-passphrase', 'My PQ Account');
 
-// Create a new Majik Key (unlocked state)
-const key = await MajikKey.create(mnemonic, 'secure-passphrase', 'My PQ Account');
-
-// 2. Access your keys (requires unlock)
+// 2. Access Identity
 console.log('Fingerprint:', key.fingerprint);
-console.log('PQ Ready:', key.metadata.kdfVersion); // 'argon2id'
 console.log('Key ID:', key.id);
-console.log('Is Unlocked:', key.isUnlocked); // true
+console.log('Unlocked?', key.isUnlocked); // true
 
-// Lock the key (clear private keys from memory)
+// 3. Lock to purge private keys from memory
 key.lock();
-console.log('Is Locked:', key.isLocked); // true
 
-// Unlock when needed
-await key.unlock('my-secure-passphrase');
-console.log('Is Unlocked:', key.isUnlocked); // true
-
-// Access private key (only when unlocked)
-const privateKey = key.getPrivateKey();
+// 4. Unlock when cryptographic operations are needed
+await key.unlock('super-secure-passphrase');
 const privateKeyBase64 = key.getPrivateKeyBase64();
 
-// Save to storage (private keys never included)
-const json = key.toJSON();
-localStorage.setItem('myKey', JSON.stringify(json));
-
-// Load from storage (locked state)
-const loadedKey = MajikKey.fromJSON(json);
-await loadedKey.unlock('my-secure-passphrase');
+// 5. Safe Storage (Private keys are encrypted at rest)
+localStorage.setItem('myKey', key.toString());
 ```
 
 ---
 
 ## API Reference
 
-### Static Methods
-
-#### `MajikKey.create(mnemonic, passphrase, label?)`
-Create a new Majik Key from a mnemonic phrase. Generates a new Argon2id-protected account.
-
-**Parameters:**
-- `mnemonic: string` - BIP39 mnemonic phrase (12-24 words)
-- `passphrase: string` - Passphrase to encrypt the private key at rest
-- `label?: string` - Optional label for the key
-
-**Returns:** `Promise<MajikKey>` - A new unlocked MajikKey instance
-
-**Example:**
-```ts
-const mnemonic = 'witch collapse practice feed shame open despair creek road again ice least';
-const key = await MajikKey.create(mnemonic, 'my-password', 'Personal Account');
-
-```
-
----
-
-#### `MajikKey.fromJSON(json)`
-Load a Majik Key from JSON (locked state).
-
-**Parameters:**
-- `json: MajikKeyJSON | string` - JSON object or string
-
-**Returns:** `MajikKey` - A locked MajikKey instance
-
-**Example:**
-```ts
-const json = localStorage.getItem('myKey');
-const key = MajikKey.fromJSON(json);
-await key.unlock('my-password');
-```
-
----
-
-#### `MajikKey.fromMnemonicJSON(mnemonicJson, passphrase, label?)`
-Create a Majik Key from MnemonicJSON format. Auto-migrates legacy PBKDF2 accounts to Argon2id + ML-KEM.
-
-**Parameters:**
-- `mnemonicJson: MnemonicJSON | string` - MnemonicJSON object or string
-- `passphrase: string` - Passphrase to encrypt the key at rest
-- `label?: string` - Optional label for the key
-
-**Returns:** `Promise<MajikKey>` - A new unlocked MajikKey instance
-
-**Example:**
-```ts
-const mnemonicData = {
-  id: 'backup-id',
-  seed: ['word1', 'word2', ...],
-  phrase: 'optional-encryption-phrase'
-};
-
-const key = await MajikKey.fromMnemonicJSON(mnemonicData, 'my-password');
-```
-
----
-
-#### `MajikKey.importFromMnemonicBackup(backup, mnemonic, passphrase, label?)`
-Import a Majik Key from a mnemonic-encrypted backup. Auto-migrates legacy PBKDF2 accounts to Argon2id + ML-KEM.
-
-**Parameters:**
-- `backup: string` - Base64-encoded backup string
-- `mnemonic: string` - The mnemonic phrase used to encrypt the backup
-- `passphrase: string` - Passphrase to encrypt the imported key
-- `label?: string` - Optional label for the key
-
-**Returns:** `Promise<MajikKey>` - A new unlocked MajikKey instance
-
-**Example:**
-```ts
-const backupString = 'eT8xY2F...'; // From exportMnemonicBackup()
-const key = await MajikKey.importFromMnemonicBackup(
-  backupString,
-  mnemonic,
-  'new-password',
-  'Restored Account'
-);
-```
-
----
-
-#### `MajikKey.generateMnemonic(strength?)`
-Generate a new BIP39 mnemonic phrase.
-
-**Parameters:**
-- `strength?: 128 | 256` - Entropy strength (128 = 12 words, 256 = 24 words). Default: 128
-
-**Returns:** `string` - A new mnemonic phrase
-
-**Example:**
-```ts
-const mnemonic12 = MajikKey.generateMnemonic();      // 12 words
-const mnemonic24 = MajikKey.generateMnemonic(256);   // 24 words
-```
-
----
-
-#### `MajikKey.validateMnemonic(mnemonic)`
-Validate a BIP39 mnemonic phrase.
-
-**Parameters:**
-- `mnemonic: string` - Mnemonic phrase to validate
-
-**Returns:** `boolean` - true if valid, false otherwise
-
-**Example:**
-```ts
-const isValid = MajikKey.validateMnemonic('witch collapse practice...');
-```
-
----
-
-### Instance Methods
-
-#### `unlock(passphrase)`
-Unlock the Majik Key by decrypting the private key. Decrypts X25519 and ML-KEM private keys into memory.
-
-**Parameters:**
-- `passphrase: string` - Passphrase to decrypt the private key
-
-**Returns:** `Promise<this>` - This instance for chaining
-
-**Throws:** `MajikKeyError` if passphrase is incorrect or key is already unlocked
-
-**Example:**
-```ts
-await key.unlock('my-password');
-```
-
----
-
-#### `lock()`
-Lock the Majik Key by clearing private keys from memory.
-
-**Returns:** `this` - This instance for chaining
-
-**Example:**
-```ts
-key.lock();
-```
-
----
-
-#### `verify(passphrase)`
-Verify that a passphrase can decrypt the private key.
-
-**Parameters:**
-- `passphrase: string` - Passphrase to verify
-
-**Returns:** `Promise<boolean>` - true if valid, false otherwise
-
-**Example:**
-```ts
-const isValid = await key.verify('my-password');
-```
-
----
-
-#### `updateLabel(newLabel)`
-Update the label of the Majik Key.
-
-**Parameters:**
-- `newLabel: string` - New label value
-
-**Returns:** `this` - This instance for chaining
-
-**Example:**
-```ts
-key.updateLabel('Work Account');
-```
-
----
-
-#### `updatePassphrase(currentPassphrase, newPassphrase)`
-Change the passphrase used to encrypt the private key. Re-encrypts keys and triggers an auto-migration to KDF v2.
-
-**Parameters:**
-- `currentPassphrase: string` - Current passphrase
-- `newPassphrase: string` - New passphrase
-
-**Returns:** `Promise<this>` - This instance for chaining
-
-**Throws:** `MajikKeyError` if current passphrase is incorrect
-
-**Example:**
-```ts
-await key.updatePassphrase('old-password', 'new-password');
-```
-
----
-
-#### `getPrivateKey()`
-Get the private key (only when unlocked).
-
-**Returns:** `CryptoKey | { raw: Uint8Array }` - The private key
-
-**Throws:** `MajikKeyError` if the key is locked
-
-**Example:**
-```ts
-const privateKey = key.getPrivateKey();
-```
-
----
-
-#### `getPrivateKeyBase64()`
-Get the private key as base64 (only when unlocked).
-
-**Returns:** `string` - The private key in base64 format
-
-**Throws:** `MajikKeyError` if the key is locked
-
-**Example:**
-```ts
-const privateKeyBase64 = key.getPrivateKeyBase64();
-```
-
----
-
-#### `toJSON()`
-Export to JSON format (safe for storage).
-
-**Returns:** `MajikKeyJSON` - JSON representation (private keys never included)
-
-**Example:**
-```ts
-const json = key.toJSON();
-localStorage.setItem('myKey', JSON.stringify(json));
-```
-
----
-
-#### `toString(pretty?)`
-Export to JSON string.
-
-**Parameters:**
-- `pretty?: boolean` - Whether to pretty-print. Default: false
-
-**Returns:** `string` - JSON string representation
-
-**Example:**
-```ts
-const jsonString = key.toString(true);
-```
-
----
-
-#### `toMnemonicJSON(mnemonic, passphrase?)`
-Export to MnemonicJSON format.
-
-**Parameters:**
-- `mnemonic: string` - The BIP39 mnemonic phrase
-- `passphrase?: string` - Optional passphrase
-
-**Returns:** `MnemonicJSON` - MnemonicJSON object
-
-**Throws:** `MajikKeyError` if the key is locked
-
-**Example:**
-```ts
-const mnemonicData = key.toMnemonicJSON(mnemonic, 'encryption-phrase');
-```
-
----
-
-#### `exportMnemonicBackup(mnemonic)`
-Export a mnemonic-encrypted backup.
-
-**Parameters:**
-- `mnemonic: string` - The original mnemonic phrase
-
-**Returns:** `Promise<string>` - Base64-encoded backup string
-
-**Throws:** `MajikKeyError` if the key is locked
-
-**Example:**
-```ts
-const backup = await key.exportMnemonicBackup(mnemonic);
-```
-
----
-
-#### `toContact()`
-Create a MajikContact from this Majik Key.
-
-**Returns:** `MajikContact` - A MajikContact instance
-
-**Example:**
-```ts
-const contact = key.toContact();
-```
-
----
-
-#### `toMajikMessageIdentity(user, options?)`
-Convert to MajikMessageIdentity for use in Majik Message.
-
-**Parameters:**
-- `user: MajikUser` - MajikUser instance
-- `options?: { label?: string, restricted?: boolean }` - Optional configuration
-
-**Returns:** `Promise<MajikMessageIdentity>` - MajikMessageIdentity instance
-
-**Example:**
-```ts
-const identity = await key.toMajikMessageIdentity(user, {
-  label: 'My Account',
-  restricted: false
-});
-```
-
----
-
-### Getters
-
-#### `id: string`
-The unique identifier (fingerprint).
-
-#### `fingerprint: string`
-The cryptographic fingerprint.
-
-#### `publicKey: CryptoKey | { raw: Uint8Array }`
-The public key.
-
-#### `publicKeyBase64: string`
-The public key in base64 format.
-
-#### `label: string`
-The user-defined label.
-
-#### `backup: string`
-The mnemonic backup identifier.
-
-#### `timestamp: Date`
-The creation timestamp.
-
-#### `isLocked: boolean`
-Whether the key is currently locked.
-
-#### `isUnlocked: boolean`
-Whether the key is currently unlocked.
-
-#### `metadata: MajikKeyMetadata`
-Safe metadata object (no sensitive data).
-
-**Example:**
-```ts
-console.log(key.metadata);
-// {
-//   id: 'fingerprint-id',
-//   fingerprint: 'fingerprint-id',
-//   label: 'My Key',
-//   timestamp: Date,
-//   isLocked: false
-// }
-```
+### Static Methods (Lifecycle & Generation)
+
+| Method                       | Parameters                                   | Returns             | Description                                         |
+| :--------------------------- | :------------------------------------------- | :------------------ | :-------------------------------------------------- |
+| `create()`                   | `mnemonic`, `passphrase`, `label?`           | `Promise<MajikKey>` | Creates a new Argon2id-protected account.           |
+| `fromJSON()`                 | `json`                                       | `MajikKey`          | Loads a locked key from safe JSON storage.          |
+| `fromMnemonicJSON()`         | `mnemonicJson`, `passphrase`, `label?`       | `Promise<MajikKey>` | Auto-migrates legacy accounts to Argon2id + ML-KEM. |
+| `importFromMnemonicBackup()` | `backup`, `mnemonic`, `passphrase`, `label?` | `Promise<MajikKey>` | Restores a key from a mnemonic-encrypted string.    |
+| `generateMnemonic()`         | `strength?` *(128 \| 256)*                   | `string`            | Generates a 12 or 24-word BIP39 phrase.             |
+| `validateMnemonic()`         | `mnemonic`                                   | `boolean`           | Validates a BIP39 mnemonic phrase.                  |
+
+### Instance Methods (State & Management)
+
+| Method               | Parameters               | Returns            | Description                                        |
+| :------------------- | :----------------------- | :----------------- | :------------------------------------------------- |
+| `unlock()`           | `passphrase`             | `Promise<this>`    | Decrypts keys into memory. Chainable.              |
+| `lock()`             | None                     | `this`             | Purges private keys from memory. Chainable.        |
+| `verify()`           | `passphrase`             | `Promise<boolean>` | Tests a passphrase without keeping keys in memory. |
+| `updatePassphrase()` | `currentPass`, `newPass` | `Promise<this>`    | Changes passphrase and auto-migrates to KDF v2.    |
+| `updateLabel()`      | `newLabel`               | `this`             | Updates the human-readable account label.          |
+
+### Export & Integration Methods
+
+| Method                     | Returns                   | Description                                         |
+| :------------------------- | :------------------------ | :-------------------------------------------------- |
+| `toJSON()` / `toString()`  | `MajikKeyJSON` / `string` | Safe export for DB/LocalStorage. No raw keys.       |
+| `toMnemonicJSON()`         | `MnemonicJSON`            | Portable seed format (Requires key to be unlocked). |
+| `exportMnemonicBackup()`   | `Promise<string>`         | Base64-encoded encrypted backup string.             |
+| `toContact()`              | `MajikContact`            | Extracts public identity data for sharing.          |
+| `toMajikMessageIdentity()` | `Promise<Identity>`       | Formats key for direct use in Majik Message.        |
+
+### Instance Getters
+*Access public data at any time:*
+`id`, `fingerprint`, `publicKey`, `publicKeyBase64`, `label`, `backup`, `timestamp`, `isLocked`, `isUnlocked`, `metadata`.
+
+*Access restricted data (Throws `MajikKeyError` if locked):*
+`getPrivateKey()`, `getPrivateKeyBase64()`.
 
 ---
 
 ## Usage Examples
 
-### Example 1: Create and Manage a Key
+### 1. Secure Backup & Recovery Workflow
 
-```ts
+```typescript
 import { MajikKey } from '@majikah/majik-key';
 
-async function createKey() {
-  // Generate mnemonic
-  const mnemonic = MajikKey.generateMnemonic();
-  console.log('🔑 Save this mnemonic safely:', mnemonic);
+// -- EXPORTING --
+const jsonData = key.toMnemonicJSON(mnemonic, 'password123');
+const blob = new Blob([JSON.stringify(jsonData)], { type: "application/json" });
+// Save blob locally...
 
-  // Create key
-  const key = await MajikKey.create(
-    mnemonic,
-    'secure-passphrase',
-    'Personal Account'
-  );
-
-  console.log('✅ Key created!');
-  console.log('ID:', key.id);
-  console.log('Fingerprint:', key.fingerprint);
-  console.log('Label:', key.label);
-
-  // Save to storage
-  const json = key.toJSON();
-  localStorage.setItem('myKey', JSON.stringify(json));
-
-  return { key, mnemonic };
-}
-
-createKey();
+// -- RECOVERING --
+const recoveredData = JSON.parse(await blob.text());
+const recoveredKey = await MajikKey.importFromMnemonicBackup(
+  recoveredData.id,
+  recoveredData.seed.join(" "), 
+  recoveredData.phrase,
+  'Recovered Key'
+);
 ```
+
+### 2. Password Verification Before Action
+
+```typescript
+const key = MajikKey.fromJSON(storedJson);
+
+if (await key.verify('user-input-password')) {
+  await key.unlock('user-input-password');
+  // ... proceed with signing/encryption
+  key.lock(); // Always clean up!
+} else {
+  throw new Error("Invalid passphrase");
+}
+```
+
 
 ---
 
-### Example 2: Lock/Unlock Pattern
+### [Majik Signature](https://majikah.solutions/products/majik-signature)  — Flagship
+**Post-quantum cryptographic file signing and verification.**
 
-```ts
-import { MajikKey } from '@majikah/majik-key';
+[![npm](https://img.shields.io/npm/v/@majikah/majik-signature)](https://www.npmjs.com/package/@majikah/majik-signature) [![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-signature)](https://www.npmjs.com/package/@majikah/majik-signature) [![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-signature)](https://bundlephobia.com/package/@majikah/majik-signature) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-async function secureLockPattern() {
-  const json = localStorage.getItem('myKey');
-  const key = MajikKey.fromJSON(json);
-
-  // Key is locked by default when loaded from JSON
-  console.log('Locked:', key.isLocked); // true
-
-  try {
-    // This will throw an error
-    const privateKey = key.getPrivateKey();
-  } catch (error) {
-    console.log('❌ Cannot access private key when locked');
-  }
-
-  // Unlock to use private key
-  await key.unlock('secure-passphrase');
-  console.log('Unlocked:', key.isUnlocked); // true
-
-  // Now we can access private keys
-  const privateKey = key.getPrivateKey();
-  const privateKeyBase64 = key.getPrivateKeyBase64();
-
-  // Use the key for cryptographic operations
-  // ...
-
-  // Lock again when done
-  key.lock();
-  console.log('🔒 Key locked again');
-}
-
-secureLockPattern();
-```
-
----
-
-### Example 3: Backup and Recovery
-
-```ts
-import { MajikKey } from '@majikah/majik-key';
-
-async function backupAndRecover() {
-  const mnemonic = MajikKey.generateMnemonic();
-  const key = await MajikKey.create(mnemonic, 'password123', 'Original Key');
-
-  //Download as Blob JSON File
-
-  const jsonData = await key.toMnemonicJSON(mnemonic, 'password123');
-  const jsonString = JSON.stringify(jsonData);
-  const blob = new Blob([jsonString], {
-    type: "application/json;charset=utf-8",
-  });
-  downloadBlob(
-    blob,
-    "json",
-    `${label} | ${key.id} | SEED KEY`,
-  );
+[![Majik Signature Hero](https://github.com/user-attachments/assets/781bb778-9535-4b1f-bbc5-820550ecc864)](https://signature.majikah.solutions)
 
 
+**Majik Signature** is the flagship feature of the ecosystem, providing hybrid classical and post-quantum content signing. It secures your files by requiring both an **Ed25519** (classical) and an **ML-DSA-87** (post-quantum) signature to pass verification.
 
-  // Later... recover from backup
+*   **Hybrid Security:** Verification requires BOTH signatures to pass, ensuring robust forward-secrecy.
+*   **Embedded Multi-Sig:** Seamlessly embeds signatures into files with full support for multi-signature envelopes.
+*   **Cryptographic Allowlists:** Establish an expected list of signers. Non-listed signers are rejected cryptographically.
+*   **Sealing:** The issuer can compute a SHA3-512 seal over the signatories, preventing any further signing attempts.
 
-  //Parse the downloaded JSON into this object
-  const jsonData: MnemonicJSON = {
-    id: "abc123",
-    seed: ["word1", "word2", ...],
-    phrase: 'password123',
-  };
+### Majik Signature Quick Start
 
-  const recoveredKey = await MajikKey.importFromMnemonicBackup(
-    jsonData.id,
-    seedArrayToString(jsonData.seed),
-    jsonData.phrase,
-    'Recovered Key'
-  );
+```typescript
+import { MajikSignature, MajikKey } from '@majikah/majik-key';
 
-  console.log('✅ Key recovered!');
-  console.log('Same fingerprint:', key.fingerprint === recoveredKey.fingerprint);
-}
+// 1. Sign a file and embed the signature (Requires an unlocked key with signing keys)
+const { blob, signature } = await MajikSignature.signFile(myFileBlob, myUnlockedKey, {
+  // Optional: restrict future signers
+  expectedSigners: [ MajikSignature.expectedSignerFromKey(myUnlockedKey) ] 
+});
 
-backupAndRecover();
+// 2. Verify a signed file's embedded signatures
+const results = await MajikSignature.verifyFile(blob, myUnlockedKey);
+
+results.forEach(res => {
+    console.log(`Signer ${res.signerId} valid?`, res.valid);
+});
+
+// 3. Seal a multi-sig file to prevent further signatures
+const { sealInfo } = await MajikSignature.seal(blob, myUnlockedKey);
+console.log("File sealed at:", sealInfo.sealTimestamp);
 ```
 
 
 ---
 
-### Example 4: Update Passphrase
+## Security Best Practices
 
-```ts
-import { MajikKey } from '@majikah/majik-key';
+✅ **DO:** 
+*   Lock keys (`.lock()`) immediately after signing or decrypting payloads to free memory.
+*   Utilize `mlKemPublicKey` for all new communication protocols to ensure PQ-readiness.
+*   Keep `@scure/bip39` and underlying crypto dependencies updated.
 
-async function changePassphrase() {
-  const json = localStorage.getItem('myKey');
-  const key = MajikKey.fromJSON(json);
-
-  // Must unlock first
-  await key.unlock('old-password');
-
-  // Change passphrase
-  await key.updatePassphrase('old-password', 'new-secure-password');
-  console.log('✅ Passphrase updated!');
-
-  // Save updated key
-  localStorage.setItem('myKey', JSON.stringify(key.toJSON()));
-
-  // Verify new passphrase works
-  key.lock();
-  await key.unlock('new-secure-password');
-  console.log('✅ New passphrase verified!');
-}
-
-changePassphrase();
-```
+❌ **DON'T:** 
+*   Log `mnemonic` phrases or `privateKeyBase64` outputs in production environments.
+*   Use `toDangerousJSON()` unless handling highly specific server-side secret injections.
 
 ---
 
-### Example 5: Verify Passphrase
+## Ecosystem
 
-```ts
-import { MajikKey } from '@majikah/majik-key';
-
-async function verifyPassphrase() {
-  const json = localStorage.getItem('myKey');
-  const key = MajikKey.fromJSON(json);
-
-  // Verify without unlocking
-  const isValid = await key.verify('user-entered-password');
-
-  if (isValid) {
-    console.log('✅ Passphrase is correct');
-    await key.unlock('user-entered-password');
-    // Proceed with operations...
-  } else {
-    console.log('❌ Invalid passphrase');
-    // Show error to user
-  }
-}
-
-verifyPassphrase();
-```
+*   [Majik Signature Web App](https://signature.majikah.solutions)
+*   [Majik Signature on Microsoft Store](https://apps.microsoft.com/detail/9pl9g3xzvd1x)
+*   [Majik Signature Official Repository](https://github.com/Majikah/majik-signature)
 
 ---
 
-## Integration with Majik Message
+## License & Author
 
-Majik Key is fully compatible with **Majik Message** as its seed phrase account implementation. Keys created with Majik Key can be directly imported into Majik Message.
+**License:** [Apache-2.0](LICENSE) — free for personal and commercial use.
 
-### Importing to Majik Message
+Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https://majikah.solutions/about)
 
-```ts
-import { MajikKey } from '@majikah/majik-key';
-
-async function importToMajikMessage() {
-  // Create or load a Majik Key
-  const mnemonic = MajikKey.generateMnemonic();
-  const key = await MajikKey.create(mnemonic, 'password', 'Message Account');
-
-  // Export to MnemonicJSON format for Majik Message
-  const mnemonicData = key.toMnemonicJSON(mnemonic, 'password');
-  const jsonString = JSON.stringify(mnemonicData);
-
-  // Download this blob as a JSON locally
-  const blob = new Blob([jsonString], {
-    type: "application/json;charset=utf-8",
-  });
-
-  // This mnemonicData can be imported directly into Majik Message
-  // as a seed phrase account
-  console.log('Import the saved JSON to Majik Message:', mnemonicData);
-}
-```
-
-### Converting to Majik Message Identity
-
-```ts
-import { MajikKey } from '@majikah/majik-key';
-import { MajikUser } from '@thezelijah/majik-user';
-
-async function createMessageIdentity() {
-  const mnemonic = MajikKey.generateMnemonic();
-  const key = await MajikKey.create(mnemonic, 'password', 'Message Identity');
-
-  // Create/parse a MajikUser instance
-  const user = new MajikUser({
-    username: 'myusername',
-    // ... other user properties
-  });
-
-  // Convert to Majik Message Identity
-  const identity = await key.toMajikMessageIdentity(user, {
-    label: 'My Message Account',
-    restricted: false
-  });
-
-  console.log('Majik Message Identity created:', identity);
-}
-```
-
----
-
-## Security Considerations
-
-### Best Practices
-
-1. **Never expose mnemonics**: Treat mnemonic phrases like root passwords. Never log or store them unencrypted.
-
-2. **Lock when not in use**: Always call .lock() when private key access is no longer required to purge the heap.
-
-3. **PQ Readiness**: For all new communication protocols, ensure you are utilizing the mlKemPublicKey.
-
-Security Summary
-- **Primary KDF**: Argon2id (64 / 3t / 4p).
-
-- **Legacy KDF**: PBKDF2-SHA256 (250,000 iterations).
-
-- **Encryption**: AES-256-GCM with unique salts and IVs.
-
-- **Post-Quantum**: ML-KEM-768 (Lattice-based cryptography).
-
-### What NOT to Do
-
-❌ **DON'T** store mnemonics in code or version control  
-❌ **DON'T** transmit mnemonics over insecure channels  
-❌ **DON'T** use weak passphrases like "password123"  
-❌ **DON'T** share mnemonics or passphrases with anyone  
-❌ **DON'T** screenshot or photograph mnemonics  
-
-### What TO Do
-
-✅ **DO** use password managers for mnemonic storage  
-✅ **DO** write mnemonics on paper and store securely  
-✅ **DO** use hardware security modules when possible  
-✅ **DO** test recovery procedures before relying on them  
-✅ **DO** keep multiple encrypted backups in different locations  
-
----
-
-### Tips & Reminders
-
-#### For Developers
-
-- **Remember**: Always validate user input before creating or unlocking keys.
-
-- **Security**: Never log sensitive data (mnemonics, private keys, passphrases) in production.
-
-- **Performance**: Lock keys when not in use to free memory and reduce attack surface.
-
-- **Testing**: Test backup/recovery procedures in development before deploying to production.
-
-- **Dependencies**: Keep `@scure/bip39` and other crypto dependencies up to date.
-
-#### For Users
-
-- **Backup**: Always keep multiple backups of your mnemonic phrase in secure locations.
-
-- **Passphrase**: Use a strong, unique passphrase for each Majik Key.
-
-- **Recovery**: Test your ability to recover keys from backups before you need to.
-
-- **Organization**: Use meaningful labels to identify different keys.
-- **Loss Prevention**: Losing your mnemonic phrase means permanent loss of access to your key.
-
----
-
-## Related Projects
-
-### [Majik Message](https://message.majikah.solutions)
-Secure messaging platform using Majik Keys
-
-[Read more about Majik Message here](https://majikah.solutions/products/majik-message)
-
-[![Majik Message Thumbnail](https://github.com/user-attachments/assets/6355cbd3-63e4-4a95-a370-64ba27cbb4a7)](https://message.majikah.solutions)
-
-> Click the image to try Majik Message live.
-
-[Read Docs](https://majikah.solutions/products/majik-message/docs)
-
-
-Also available on [Microsoft Store](https://apps.microsoft.com/detail/9pmjgvzzjspn) for free.
-
-[Official Repository](https://github.com/Majikah/majik-message)
-[SDK Library](https://www.npmjs.com/package/@majikah/majik-message)
-
----
-
-## Contributing
-
-If you want to contribute or help extend support to more platforms, reach out via email. All contributions are welcome!  
-
----
-
-## License
-
-[Apache-2.0](LICENSE) — free for personal and commercial use.
-
----
-## Author
-
-Made with 💙 by [@thezelijah](https://github.com/jedlsf)
-
-## About the Developer
-
-- **Developer**: Josef Elijah Fabian
-- **GitHub**: [https://github.com/jedlsf](https://github.com/jedlsf)
-- **Project Repository**: [https://github.com/Majikah/majik-key](https://github.com/Majikah/majik-key)
-
----
-
-## Contact
-
-- **Business Email**: [business@thezelijah.world](mailto:business@thezelijah.world)
-- **Official Website**: [https://www.thezelijah.world](https://www.thezelijah.world)
+*   **GitHub:** [@jedlsf](https://github.com/jedlsf)
+*   **Website:** [https://www.thezelijah.world](https://www.thezelijah.world)
+*   **Email:** [business@thezelijah.world](mailto:business@thezelijah.world)

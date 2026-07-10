@@ -22,7 +22,8 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { MajikKey } from "../src/majik-key";
-import { base58Encode } from "../src/core/web3/solana";
+import { base58Encode } from "../src/core/web3/utils";
+
 
 const CRYPTO_TIMEOUT = 60_000;
 

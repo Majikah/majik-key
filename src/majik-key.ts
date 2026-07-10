@@ -24,6 +24,7 @@
 
 import {
   generateMnemonic as bip39GenerateMnemonic,
+  mnemonicToSeed,
   validateMnemonic,
 } from "@scure/bip39";
 import {
@@ -65,7 +66,15 @@ import type {
 import { MajikMessageIdentity } from "./core/database/system/identity";
 import { MajikUser } from "@thezelijah/majik-user";
 import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist";
+
 import {
+  MajikKeyWeb3Namespace,
+  BitcoinDerivationOptions,
+  BitcoinKeypairMaterial,
+  deriveBitcoinKeypairFromSeed,
+  signWithBitcoinMaterial,
+  toBitcoinAddress,
+  toWIF,
   deriveSolanaKeypairFromEdSecretKey,
   signWithSolanaMaterial,
   solanaAddressFromPublicKey,
@@ -73,8 +82,7 @@ import {
   solanaMaterialFromEd25519SecretKey,
   toSolanaAddress,
   toSolanaKeyPairSigner,
-} from "./core/web3/solana";
-import { MajikKeyWeb3Namespace } from "./core/web3/types";
+} from "./core/web3";
 
 const SALT_SIZE = 32;
 
@@ -95,12 +103,16 @@ export interface MajikKeyIdentity {
   edSecretKey?: Uint8Array;
   mlDsaPublicKey?: Uint8Array;
   mlDsaSecretKey?: Uint8Array;
+
+  btcPublicKey?: Uint8Array;
+  btcSecretKey?: Uint8Array;
 }
 
 export type MajikKeyDerivedIdentity = MajikKeyIdentity & {
   encryptedMlKemSecretKey: ArrayBuffer;
   encryptedEdSecretKey: ArrayBuffer;
   encryptedMlDsaSecretKey: ArrayBuffer;
+  encryptedBtcSecretKey: ArrayBuffer;
 };
 
 export interface SerializedIdentity {
@@ -139,6 +151,11 @@ export interface MajikKeyConstructorOptions {
 
   edSecretKey?: Uint8Array;
   mlDsaSecretKey?: Uint8Array;
+
+  btcPublicKey?: Uint8Array;
+  encryptedBtcSecretKey?: ArrayBuffer;
+  encryptedBtcSecretKeyBase64?: string;
+  btcSecretKey?: Uint8Array;
 
   mnemonicLanguage?: MnemonicLanguage;
 }
@@ -181,6 +198,11 @@ export class MajikKey {
   //Experimental
   private _solanaKeypairMaterial?: SolanaKeypairMaterial;
 
+  private _btcPublicKey?: Uint8Array;
+  private _btcSecretKey?: Uint8Array;
+  private _encryptedBtcSecretKey?: ArrayBuffer;
+  private _encryptedBtcSecretKeyBase64?: string;
+
   private constructor(options: MajikKeyConstructorOptions) {
     this._id = options.id;
     this._publicKey = options.publicKey;
@@ -209,6 +231,11 @@ export class MajikKey {
 
     this._edSecretKey = options.edSecretKey;
     this._mlDsaSecretKey = options.mlDsaSecretKey;
+
+    this._btcPublicKey = options.btcPublicKey;
+    this._btcSecretKey = options.btcSecretKey;
+    this._encryptedBtcSecretKey = options.encryptedBtcSecretKey;
+    this._encryptedBtcSecretKeyBase64 = options.encryptedBtcSecretKeyBase64;
 
     this._mnemonicLanguage = options.mnemonicLanguage || "en";
   }
@@ -263,6 +290,13 @@ export class MajikKey {
   get isFullyUpgraded(): boolean {
     return this.isArgon2id && this.hasMlKem;
   }
+  get btcPublicKey(): Uint8Array | undefined {
+    return this._btcPublicKey;
+  }
+
+  get hasBitcoin(): boolean {
+    return this._btcPublicKey !== undefined;
+  }
 
   get metadata(): MajikKeyMetadata {
     return {
@@ -273,10 +307,14 @@ export class MajikKey {
       isLocked: this.isLocked,
       kdfVersion: this.kdfVersion,
       hasMlKem: this.hasMlKem,
+      web3: {
+        hasBitcoin: this.hasBitcoin,
+        hasSolana: this.hasSolanaKeypair,
+      },
+
       mnemonicLanguage: this.mnemonicLanguage || "en",
     };
   }
-
   get edPublicKey(): Uint8Array | undefined {
     return this._edPublicKey;
   }
@@ -357,6 +395,14 @@ export class MajikKey {
 
         edSecretKey: identity.edSecretKey,
         mlDsaSecretKey: identity.mlDsaSecretKey,
+
+        btcPublicKey: identity.btcPublicKey,
+        encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
+        encryptedBtcSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedBtcSecretKey,
+        ),
+        btcSecretKey: identity.btcSecretKey,
+
         mnemonicLanguage: mnemonicLanguage,
       });
     } catch (err) {
@@ -416,6 +462,19 @@ export class MajikKey {
         );
       }
 
+      const btcPublicKey = anyParsed.btcPublicKey
+        ? base64ToUint8Array(anyParsed.btcPublicKey)
+        : undefined;
+
+      let encryptedBtcSecretKey: ArrayBuffer | undefined;
+      let encryptedBtcSecretKeyBase64: string | undefined;
+      if (anyParsed.encryptedBtcSecretKey) {
+        encryptedBtcSecretKeyBase64 = anyParsed.encryptedBtcSecretKey;
+        encryptedBtcSecretKey = base64ToArrayBuffer(
+          anyParsed.encryptedBtcSecretKey,
+        );
+      }
+
       return new MajikKey({
         id: validated.id,
         publicKey: { raw: new Uint8Array(publicKeyBuffer) },
@@ -439,6 +498,9 @@ export class MajikKey {
         mlDsaPublicKey,
         encryptedMlDsaSecretKey,
         encryptedMlDsaSecretKeyBase64,
+        btcPublicKey,
+        encryptedBtcSecretKey,
+        encryptedBtcSecretKeyBase64,
         mnemonicLanguage: validated?.mnemonicLanguage || "en",
       });
     } catch (err) {
@@ -474,6 +536,9 @@ export class MajikKey {
       mlKemSecretKeyBase64: arrayToBase64(this._mlKemSecretKey),
       edSecretKeyBase64: arrayToBase64(this._edSecretKey),
       mlDsaSecretKeyBase64: arrayToBase64(this._mlDsaSecretKey),
+      btcSecretKeyBase64: this._btcSecretKey
+        ? arrayToBase64(this._btcSecretKey)
+        : undefined,
     };
   }
 
@@ -512,6 +577,13 @@ export class MajikKey {
       const mlKemPublicKey = base64ToUint8Array(parsed.mlKemPublicKey);
       const mlKemSecretKey = base64ToUint8Array(parsed.mlKemSecretKeyBase64);
 
+      const btcPublicKey = parsed.btcPublicKey
+        ? base64ToUint8Array(parsed.btcPublicKey)
+        : undefined;
+      const btcSecretKey = parsed.btcSecretKeyBase64
+        ? base64ToUint8Array(parsed.btcSecretKeyBase64)
+        : undefined;
+
       return new MajikKey({
         id: parsed.id,
         fingerprint: parsed.fingerprint,
@@ -530,6 +602,8 @@ export class MajikKey {
         edSecretKey,
         mlDsaPublicKey,
         mlDsaSecretKey,
+        btcPublicKey,
+        btcSecretKey,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -674,6 +748,22 @@ export class MajikKey {
         this._mlDsaSecretKey = mlDsaSecretKeyBytes;
       }
 
+      if (this._encryptedBtcSecretKey) {
+        const btcSecretKeyBytes = await MajikKey._decryptSigningKey(
+          this._encryptedBtcSecretKey,
+          currentPassphrase,
+          salt,
+        );
+        const encBtc = await MajikKey._encryptSigningKey(
+          btcSecretKeyBytes,
+          newPassphrase,
+          newSalt,
+        );
+        this._encryptedBtcSecretKey = encBtc;
+        this._encryptedBtcSecretKeyBase64 = arrayBufferToBase64(encBtc);
+        this._btcSecretKey = btcSecretKeyBytes;
+      }
+
       return this;
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -723,6 +813,7 @@ export class MajikKey {
     this._mlKemSecretKey = undefined;
     this._edSecretKey = undefined;
     this._mlDsaSecretKey = undefined;
+    this._btcSecretKey = undefined;
     this._solanaKeypairMaterial = undefined;
     return this;
   }
@@ -778,6 +869,14 @@ export class MajikKey {
       if (this._encryptedMlDsaSecretKey) {
         this._mlDsaSecretKey = await MajikKey._decryptSigningKey(
           this._encryptedMlDsaSecretKey,
+          passphrase,
+          salt,
+        );
+      }
+
+      if (this._encryptedBtcSecretKey) {
+        this._btcSecretKey = await MajikKey._decryptSigningKey(
+          this._encryptedBtcSecretKey,
           passphrase,
           salt,
         );
@@ -875,6 +974,10 @@ export class MajikKey {
         ? arrayToBase64(this._mlDsaPublicKey)
         : undefined,
       encryptedMlDsaSecretKey: this._encryptedMlDsaSecretKeyBase64,
+      btcPublicKey: this._btcPublicKey
+        ? arrayToBase64(this._btcPublicKey)
+        : undefined,
+      encryptedBtcSecretKey: this._encryptedBtcSecretKeyBase64,
       mnemonicLanguage: this._mnemonicLanguage,
     };
   }
@@ -1105,6 +1208,12 @@ export class MajikKey {
         ),
         edSecretKey: identity.edSecretKey,
         mlDsaSecretKey: identity.mlDsaSecretKey,
+        btcPublicKey: identity.btcPublicKey,
+        encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
+        encryptedBtcSecretKeyBase64: arrayBufferToBase64(
+          identity.encryptedBtcSecretKey,
+        ),
+        btcSecretKey: identity.btcSecretKey,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -1179,6 +1288,17 @@ export class MajikKey {
       salt,
     );
 
+    // Bitcoin — real BIP-32/BIP-84 off the raw 64-byte BIP-39 seed, using
+    // Majik's domain-separated path by default. Same salt, different IV,
+    // same pattern as ML-KEM/Ed25519/ML-DSA above.
+    const rawSeed = await mnemonicToSeed(mnemonic);
+    const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
+    const encryptedBtcSecretKey = await MajikKey._encryptSigningKey(
+      btcMaterial.privateKey,
+      passphrase,
+      salt,
+    );
+
     return {
       id: encIdentity.fingerprint,
       publicKey: encIdentity.publicKey,
@@ -1196,6 +1316,9 @@ export class MajikKey {
       mlDsaPublicKey: encIdentity.mlDsaPublicKey,
       mlDsaSecretKey,
       encryptedMlDsaSecretKey,
+      btcPublicKey: btcMaterial.publicKey,
+      btcSecretKey: btcMaterial.privateKey,
+      encryptedBtcSecretKey,
     };
   }
 
@@ -1416,32 +1539,117 @@ export class MajikKey {
 
   // ── WEB3 (EXPERIMENTAL) ─────────────────────────────────────────────────────
 
-  /**
-   * @experimental Blockchain/web3 integrations are experimental — this API
-   * may change without notice. `undefined` when the MajikKey is locked or
-   * has no Ed25519 signing key to derive from.
-   *
-   * By default `web3.solana` is DOMAIN-SEPARATED from the MajikKey's message
-   * signing key (see deriveSolanaKeypairFromEdSecretKey). Use
-   * `getSolanaKeypairMaterial({ reuseMessageKey: true })` if you specifically
-   * want the identical key reused for Solana instead.
-   */
+  getBtcSecretKey(): Uint8Array {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._btcSecretKey)
+      throw new MajikKeyError(
+        "No Bitcoin secret key — re-import via importFromMnemonicBackup() for full migration.",
+      );
+    return this._btcSecretKey;
+  }
+
+  // ── WEB3 (EXPERIMENTAL) — updated getter ────────────────────────────────────
+
   get web3(): MajikKeyWeb3Namespace | undefined {
     if (!this.hasSolanaKeypair) return undefined;
 
-    const material = this._getOrDeriveSolanaMaterial();
+    const solanaMaterial = this._getOrDeriveSolanaMaterial();
+
+    const btcMaterial: BitcoinKeypairMaterial | undefined =
+      this._btcSecretKey && this._btcPublicKey
+        ? { privateKey: this._btcSecretKey, publicKey: this._btcPublicKey }
+        : undefined;
+
     return {
       solana: {
-        publicKey: material.publicKey,
-        secretKey: material.secretKey,
-        address: solanaAddressFromPublicKey(material.publicKey),
-        getSolanaKeypair: () => toSolanaKeyPairSigner(material),
-        getSolanaAddress: () => toSolanaAddress(material),
+        publicKey: solanaMaterial.publicKey,
+        secretKey: solanaMaterial.secretKey,
+        address: solanaAddressFromPublicKey(solanaMaterial.publicKey),
+        getSolanaKeypair: () => toSolanaKeyPairSigner(solanaMaterial),
+        getSolanaAddress: () => toSolanaAddress(solanaMaterial),
         sign: (message: Uint8Array) =>
-          signWithSolanaMaterial(material, message),
+          signWithSolanaMaterial(solanaMaterial, message),
+      },
+      bitcoin: btcMaterial && {
+        publicKey: btcMaterial.publicKey,
+        privateKey: btcMaterial.privateKey,
+        getBitcoinAddress: () => toBitcoinAddress(btcMaterial),
+        getWIF: (options?: { compressed?: boolean }) =>
+          toWIF(btcMaterial, options),
+        sign: (hash: Uint8Array, scheme?: "ecdsa" | "schnorr") =>
+          signWithBitcoinMaterial(btcMaterial, hash, scheme),
       },
     };
   }
+
+  // ── BITCON (EXPERIMENTAL)  ────────────────────────────────────
+
+  /**
+   * @experimental True if this MajikKey can currently produce Bitcoin
+   * material (i.e. it's unlocked and has a Bitcoin secret key).
+   */
+  get hasBitcoinKeypair(): boolean {
+    return this.isUnlocked && this._btcSecretKey !== undefined;
+  }
+
+  /**
+   * @experimental Raw Bitcoin keypair material. Pass `{ standard: true }` to
+   * get the REAL BIP-84 mainnet key (recoverable in any standard wallet from
+   * the mnemonic alone) instead of Majik's default domain-separated key.
+   *
+   * NOTE: `{ standard: true }` re-derives from the raw seed on demand and is
+   * NOT the same key as `web3.bitcoin` (which is always the stored,
+   * domain-separated default) — it requires the mnemonic to reproduce again
+   * outside Majik, whereas the stored default does not.
+   */
+  getBitcoinKeypairMaterial(
+    options?: BitcoinDerivationOptions,
+  ): BitcoinKeypairMaterial {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!options?.standard && !options?.path) {
+      if (!this._btcSecretKey || !this._btcPublicKey)
+        throw new MajikKeyError(
+          "No Bitcoin secret key — re-import via importFromMnemonicBackup() first.",
+        );
+      return { privateKey: this._btcSecretKey, publicKey: this._btcPublicKey };
+    }
+    throw new MajikKeyError(
+      "Deriving the standard BIP-84 path requires the mnemonic — " +
+        "use MajikKey.deriveStandardBitcoinFromMnemonic(mnemonic) instead.",
+    );
+  }
+
+  /**
+   * @experimental Derive the REAL BIP-84 mainnet Bitcoin keypair straight
+   * from a mnemonic — for one-off export/verification. Does not require
+   * an unlocked MajikKey instance.
+   */
+  static async deriveStandardBitcoinFromMnemonic(
+    mnemonic: string,
+    mnemonicLanguage: MnemonicLanguage = "en",
+  ): Promise<BitcoinKeypairMaterial> {
+    MajikKeyValidator.validateMnemonic(mnemonic);
+    const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+
+    if (!validateMnemonic(mnemonic, wordlist)) {
+      throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
+    }
+
+    const seed = await mnemonicToSeed(mnemonic);
+    return deriveBitcoinKeypairFromSeed(seed, { standard: true });
+  }
+
+  /**
+   * @experimental WIF export of the default (domain-separated) Bitcoin key.
+   */
+  getBitcoinWIF(options?: { compressed?: boolean }): string {
+    const material = this.getBitcoinKeypairMaterial();
+    return toWIF(material, options);
+  }
+
+  // ── SOLANA (EXPERIMENTAL)  ────────────────────────────────────
 
   /**
    * @experimental True if this MajikKey can currently produce a Solana
