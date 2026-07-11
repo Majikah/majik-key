@@ -381,12 +381,23 @@ const solanaSigner = await key.getSolanaKeypair(); // needs @solana/kit
 
 ---
 
-## License & Author
+## License
 
 **License:** [Apache-2.0](LICENSE) — free for personal and commercial use.
 
+## Author
+
 Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https://majikah.solutions/about)
 
-- **GitHub:** [@jedlsf](https://github.com/jedlsf)
-- **Website:** [https://www.thezelijah.world](https://www.thezelijah.world)
-- **Email:** [business@thezelijah.world](mailto:business@thezelijah.world)
+
+**Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)
+**GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
+**Project Repository**: [https://github.com/Majikah/majik-signature](https://github.com/Majikah/majik-signature)
+
+---
+
+## Contact
+
+- **Business Email**: [business@majikah.solutions](mailto:business@majikah.solutions)
+- **Official Website**: [https://www.thezelijah.world](https://www.thezelijah.world)
+- **Majikah Ecosystem**: [https://majikah.solutions](https://majikah.solutions)
