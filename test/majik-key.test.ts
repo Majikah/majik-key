@@ -57,12 +57,9 @@ describe("MajikKey Class Unit Tests", () => {
     it(
       "should successfully generate a MajikKey instance from a real mnemonic",
       async () => {
-        majikKey = await MajikKey.create(
-          validMnemonic,
-          PASSPHRASE,
-          LABEL,
-          "en",
-        );
+        majikKey = await MajikKey.create(validMnemonic, PASSPHRASE, LABEL, {
+          mnemonicLanguage: "en",
+        });
 
         expect(majikKey).toBeInstanceOf(MajikKey);
         expect(majikKey.id).toBeTruthy();
@@ -188,7 +185,7 @@ describe("MajikKey Class Unit Tests", () => {
           mnemonic,
           PASSPHRASE,
           `Key (${language})`,
-          language,
+          { mnemonicLanguage: language },
         );
 
         expect(key).toBeInstanceOf(MajikKey);
@@ -209,12 +206,9 @@ describe("MajikKey Class Unit Tests", () => {
       "should unlock a '%s' MajikKey using the real passphrase-derived key",
       async (language) => {
         const mnemonic = await MajikKey.generateMnemonic(128, language);
-        const key = await MajikKey.create(
-          mnemonic,
-          PASSPHRASE,
-          LABEL,
-          language,
-        );
+        const key = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, {
+          mnemonicLanguage: language,
+        });
 
         key.lock();
         await key.unlock(PASSPHRASE);
@@ -233,7 +227,9 @@ describe("MajikKey Class Unit Tests", () => {
       const japaneseMnemonic = await MajikKey.generateMnemonic(128, "ja");
 
       await expect(
-        MajikKey.create(japaneseMnemonic, PASSPHRASE, LABEL, "en"),
+        MajikKey.create(japaneseMnemonic, PASSPHRASE, LABEL, {
+          mnemonicLanguage: "en",
+        }),
       ).rejects.toThrow(/Invalid BIP39 mnemonic phrase/);
     });
   });
