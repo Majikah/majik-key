@@ -1,25 +1,7 @@
 /**
  * MajikKey.ts
+ * Seed phrase account library for the Majikah ecosystem.
  *
- * Seed phrase account library for Majik Message.
- *
- * Every account stores TWO keypairs derived deterministically from the mnemonic:
- *   1. X25519 (Curve25519)   — fingerprint, contact identity, legacy message compat
- *   2. ML-KEM-768 (FIPS-203) — post-quantum key encapsulation for v3 envelopes
- *
- * Both are derived from the 64-byte BIP-39 seed:
- *   seed[0..32]  → Ed25519 → X25519 via ed2curve
- *   seed[0..64]  → ml_kem768.keygen(seed) — full seed, deterministic
- *
- * KDF versioning (passphrase encryption at rest):
- *   v1 — PBKDF2-SHA256, 250k iterations   (legacy read-only)
- *   v2 — Argon2id, 128 MB / 4t / 4p       (all new accounts)
- *
- * Migration policy:
- *   Old accounts (v1, no ML-KEM keys) are fully upgraded on first import
- *   via importFromMnemonicBackup(). The mnemonic is always available at that
- *   point, so ML-KEM keys can be deterministically re-derived and stored.
- *   No partial migration — either fully upgraded or not upgraded yet.
  */
 
 import {
@@ -58,7 +40,9 @@ import {
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import type {
+  MajikKeyAddress,
   MajikKeyDangerousJSON,
+  MajikKeyFingerprint,
   MajikKeyJSON,
   MajikKeyMetadata,
   MnemonicJSON,
@@ -87,59 +71,123 @@ import {
 const SALT_SIZE = 32;
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
-
+/**
+ * In-memory identity bundle for an *unlocked* MajikKey — the raw CryptoKey/
+ * Uint8Array material, not the encrypted-at-rest form. This is what
+ * `toKeyIdentity()` returns, and what backup export starts from.
+ *
+ * `mlKemPublicKey`/`mlKemSecretKey` are required here because every account
+ * (even ones mid-migration) is expected to carry ML-KEM material by the time
+ * this shape is used. `ed*`, `mlDsa*`, and `btc*` are optional because
+ * accounts imported before those key types existed may not have them yet —
+ * check `hasSigningKeys` / `hasBitcoin` on the `MajikKey` instance before
+ * relying on them.
+ */
 export interface MajikKeyIdentity {
+  /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
   id: string;
+  /** X25519 public key — native `CryptoKey` where WebCrypto supports it, otherwise a raw-bytes wrapper. */
   publicKey: CryptoKey | { raw: Uint8Array };
-  fingerprint: string;
+  /** SHA-256 fingerprint of `publicKey`. */
+  fingerprint: MajikKeyFingerprint;
+  /** X25519 private key, decrypted into memory. ⚠️ Live key material — do not log or serialize directly. */
   privateKey: CryptoKey | { raw: Uint8Array };
+  /** AES-256-GCM-encrypted X25519 private key (IV + ciphertext), as stored at rest. */
   encryptedPrivateKey: ArrayBuffer;
+  /** Random salt used to derive the passphrase-based encryption key. Base64. */
   salt: string;
+  /** KDF used to encrypt the keys on this identity: `1` = legacy PBKDF2, `2` = Argon2id. */
   kdfVersion: KDF_VERSION;
+  /** ML-KEM-768 (FIPS-203) public key. Post-quantum key encapsulation. */
   mlKemPublicKey: Uint8Array;
+  /** ML-KEM-768 secret key, decrypted into memory. ⚠️ Live key material. */
   mlKemSecretKey?: Uint8Array;
 
+  /** Ed25519 public key. Classical signing — same keypair the X25519 identity key is converted from. */
   edPublicKey?: Uint8Array;
+  /** Ed25519 secret key, decrypted into memory. ⚠️ Live key material. */
   edSecretKey?: Uint8Array;
+  /** ML-DSA-87 (FIPS-204) public key. Post-quantum signing. */
   mlDsaPublicKey?: Uint8Array;
+  /** ML-DSA-87 secret key, decrypted into memory. ⚠️ Live key material. */
   mlDsaSecretKey?: Uint8Array;
 
+  /** @experimental secp256k1 Bitcoin public key. Domain-separated BIP-32/84 derivation by default. */
   btcPublicKey?: Uint8Array;
+  /** @experimental Bitcoin private key, decrypted into memory. ⚠️ Live key material. */
   btcSecretKey?: Uint8Array;
 }
 
+/**
+ * `MajikKeyIdentity` immediately after fresh derivation from a mnemonic —
+ * i.e. what `create()` and `importFromMnemonicBackup()` produce internally,
+ * before the result is wrapped into a `MajikKey` instance.
+ *
+ * Unlike the base `MajikKeyIdentity`, every `encrypted*` field here is
+ * required: a fresh derivation always re-derives and re-encrypts the full
+ * key set (ML-KEM, Ed25519, ML-DSA, and Bitcoin) in one pass, so there's no
+ * "partially migrated" state at this point in the flow.
+ */
 export type MajikKeyDerivedIdentity = MajikKeyIdentity & {
+  /** AES-256-GCM-encrypted ML-KEM-768 secret key, freshly re-encrypted. */
   encryptedMlKemSecretKey: ArrayBuffer;
+  /** AES-256-GCM-encrypted Ed25519 secret key, freshly re-encrypted. */
   encryptedEdSecretKey: ArrayBuffer;
+  /** AES-256-GCM-encrypted ML-DSA-87 secret key, freshly re-encrypted. */
   encryptedMlDsaSecretKey: ArrayBuffer;
-  encryptedBtcSecretKey: ArrayBuffer;
+  /** @experimental AES-256-GCM-encrypted Bitcoin secret key, freshly re-encrypted. */
+  encryptedBtcSecretKey?: ArrayBuffer;
 };
 
+/**
+ * Minimal identity export — just enough to identify the account and, if
+ * present, re-derive access to it. Lighter than `MajikKeyJSON`: no ML-KEM,
+ * Ed25519, ML-DSA, or Bitcoin fields at all. Produced by
+ * `toSerializedIdentity()` (unlocked keys only).
+ */
 export interface SerializedIdentity {
   id: string;
-  publicKey: string;
-  fingerprint: string;
+  /** X25519 public key, base64. */
+  publicKey: MajikKeyAddress;
+  fingerprint: MajikKeyFingerprint;
+  /** AES-256-GCM-encrypted X25519 private key, base64. Omitted in some contexts — check before use. */
   encryptedPrivateKey?: string;
+  /** Base64 salt paired with `encryptedPrivateKey`. Omitted in some contexts — check before use. */
   salt?: string;
 }
 
+/**
+ * Internal constructor payload for `MajikKey` — every static factory
+ * (`create()`, `fromJSON()`, `fromDangerousJSON()`, `importFromMnemonicBackup()`,
+ * etc.) builds one of these and passes it to the private constructor.
+ *
+ * You won't normally build this by hand; it's exported mainly for type
+ * inference around the factory methods. Fields mirror `MajikKeyJSON` plus
+ * the live (decrypted) counterparts where a factory is constructing an
+ * already-unlocked instance.
+ */
 export interface MajikKeyConstructorOptions {
   id: string;
   publicKey: CryptoKey | { raw: Uint8Array };
-  publicKeyBase64: string;
-  fingerprint: string;
+  publicKeyBase64: MajikKeyAddress;
+  fingerprint: MajikKeyFingerprint;
   encryptedPrivateKey: ArrayBuffer;
   encryptedPrivateKeyBase64: string;
   salt: string;
+  /** Encrypted mnemonic-verification blob — see `MajikKeyJSON.backup`. */
   backup: string;
   label?: string;
   timestamp?: Date;
+  /** Defaults to legacy PBKDF2 (`KDF_VERSION.PBKDF2`) if omitted — see the private constructor. */
   kdfVersion?: KDF_VERSION;
   mlKemPublicKey: Uint8Array;
+  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   mlKemSecretKey?: Uint8Array;
   encryptedMlKemSecretKey?: ArrayBuffer;
   encryptedMlKemSecretKeyBase64?: string;
+  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   privateKey?: CryptoKey | { raw: Uint8Array };
+  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   privateKeyBase64?: string;
 
   edPublicKey?: Uint8Array;
@@ -149,19 +197,46 @@ export interface MajikKeyConstructorOptions {
   encryptedMlDsaSecretKey?: ArrayBuffer;
   encryptedMlDsaSecretKeyBase64?: string;
 
+  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   edSecretKey?: Uint8Array;
+  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   mlDsaSecretKey?: Uint8Array;
 
+  /** @experimental secp256k1 Bitcoin public key. */
   btcPublicKey?: Uint8Array;
+  /** @experimental AES-256-GCM-encrypted Bitcoin private key. */
   encryptedBtcSecretKey?: ArrayBuffer;
+  /** @experimental Base64 form of `encryptedBtcSecretKey`. */
   encryptedBtcSecretKeyBase64?: string;
+  /** @experimental Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   btcSecretKey?: Uint8Array;
 
   mnemonicLanguage?: MnemonicLanguage;
 }
 
-// ─── MajikKey ─────────────────────────────────────────────────────────────────
-
+/**
+ * MajikKey
+ * ---
+ *
+ * Seed phrase account library for the Majikah ecosystem.
+ *
+ * Every account stores FIVE keypairs, all deterministically derived from a
+ * single BIP-39 mnemonic:
+ *   1. X25519 (Curve25519)   — fingerprint, contact identity, legacy message compat
+ *   2. ML-KEM-768 (FIPS-203) — post-quantum key encapsulation for v3 envelopes
+ *   3. Ed25519               — classical signing
+ *   4. ML-DSA-87 (FIPS-204)  — post-quantum signing
+ *   5. Bitcoin (secp256k1)   — BIP-32/84 HD key, domain-separated by default (experimental)
+ *
+ * All derived from the 64-byte BIP-39 seed:
+ *   seed[0..32]  → Ed25519 keypair — used directly for signing, AND converted
+ *                  to X25519 via ed2curve for the encryption/identity keypair
+ *                  (one Ed25519 keypair, two roles)
+ *   seed[0..64]  → ml_kem768.keygen(seed) — full seed, deterministic
+ *   hash(seed || "MajikSignatureSeedDSA") → 32-byte seed → ml_dsa87.keygen()
+ *   seed[0..64]  → HDKey.fromMasterSeed(seed).derive(path) — BIP-32/84 Bitcoin key
+ *
+ */
 export class MajikKey {
   private readonly _id: string;
   private readonly _publicKey: CryptoKey | { raw: Uint8Array };
@@ -195,12 +270,29 @@ export class MajikKey {
   private _encryptedMlDsaSecretKey?: ArrayBuffer;
   private _encryptedMlDsaSecretKeyBase64?: string;
 
-  //Experimental
+  /**
+   * @experimental
+   */
   private _solanaKeypairMaterial?: SolanaKeypairMaterial;
 
+  /**
+   * @experimental
+   */
   private _btcPublicKey?: Uint8Array;
+
+  /**
+   * @experimental
+   */
   private _btcSecretKey?: Uint8Array;
+
+  /**
+   * @experimental
+   */
   private _encryptedBtcSecretKey?: ArrayBuffer;
+
+  /**
+   * @experimental
+   */
   private _encryptedBtcSecretKeyBase64?: string;
 
   private constructor(options: MajikKeyConstructorOptions) {
@@ -242,62 +334,110 @@ export class MajikKey {
 
   // ── Getters ─────────────────────────────────────────────────────────────────
 
+  /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
   get id(): string {
     return this._id;
   }
-  get fingerprint(): string {
+
+  /** SHA-256 fingerprint of the X25519 public key. Stable identity anchor for the account. */
+  get fingerprint(): MajikKeyFingerprint {
     return this._fingerprint;
   }
+
+  /** X25519 public key — native `CryptoKey` where WebCrypto supports it, otherwise a raw-bytes wrapper. Always available, even when locked. */
   get publicKey(): CryptoKey | { raw: Uint8Array } {
     return this._publicKey;
   }
-  get publicKeyBase64(): string {
+
+  /** X25519 public key, base64-encoded. Always available, even when locked. */
+  get publicKeyBase64(): MajikKeyAddress {
     return this._publicKeyBase64;
   }
+
+  /** Human-readable, user-editable account name. Update via `updateLabel()`. */
   get label(): string {
     return this._label;
   }
+
+  /** BIP-39 wordlist language this account's mnemonic was generated/validated against. */
   get mnemonicLanguage(): MnemonicLanguage {
     return this._mnemonicLanguage;
   }
+
+  /**
+   * Encrypted mnemonic-verification blob (base64 JSON). Decryptable only
+   * with the original mnemonic — used internally to verify a supplied
+   * mnemonic before `importFromMnemonicBackup()` re-derives the full
+   * identity. Not a general-purpose private-key backup.
+   */
   get backup(): string {
     return this._backup;
   }
+
+  /** Account creation time. */
   get timestamp(): Date {
     return this._timestamp;
   }
+
+  /** KDF currently protecting every `encrypted*` field on this account: `1` = legacy PBKDF2, `2` = Argon2id. */
   get kdfVersion(): KDF_VERSION {
     return this._kdfVersion;
   }
+
+  /** `true` if this account is on the current KDF (Argon2id). `false` means it's still on legacy PBKDF2 — see `migrate()` or `importFromMnemonicBackup()`. */
   get isArgon2id(): boolean {
     return this._kdfVersion === KDF_VERSION.ARGON2ID;
   }
+
+  /** `true` if private key material is currently purged from memory (i.e. `lock()` was called, or `unlock()` hasn't been called yet). */
   get isLocked(): boolean {
     return this._privateKey === undefined;
   }
+
+  /** `true` if private key material is currently decrypted in memory. The inverse of `isLocked`. */
   get isUnlocked(): boolean {
     return this._privateKey !== undefined;
   }
+
+  /** ML-KEM-768 (FIPS-203) public key. Post-quantum key encapsulation. Always available, even when locked. */
   get mlKemPublicKey(): Uint8Array {
     return this._mlKemPublicKey;
   }
+
+  /** ML-KEM-768 secret key. `undefined` unless the account is unlocked. ⚠️ Live key material — prefer `getMlKemSecretKey()` if you want a thrown error instead of `undefined` on locked accounts. */
   get mlKemSecretKey(): Uint8Array | undefined {
     return this._mlKemSecretKey;
   }
+
+  /** `true` if this account has ML-KEM-768 keys (i.e. is post-quantum-encryption capable). `false` means it's a legacy account pending migration. */
   get hasMlKem(): boolean {
     return this._mlKemPublicKey !== undefined;
   }
+
+  /** `true` if this account is on Argon2id *and* has ML-KEM-768 keys — i.e. fully migrated, nothing left to upgrade. */
   get isFullyUpgraded(): boolean {
     return this.isArgon2id && this.hasMlKem;
   }
+
+  /**
+   * @experimental secp256k1 Bitcoin public key. `undefined` if this account
+   * has no stored Bitcoin key material (e.g. it predates Web3 support and
+   * hasn't been re-imported via `importFromMnemonicBackup()`).
+   */
   get btcPublicKey(): Uint8Array | undefined {
     return this._btcPublicKey;
   }
 
+  /** @experimental `true` if this account has a stored Bitcoin keypair. */
   get hasBitcoin(): boolean {
     return this._btcPublicKey !== undefined;
   }
 
+  /**
+   * Lightweight, non-secret snapshot of this account's state — no key bytes
+   * at all, encrypted or otherwise. Useful for account pickers, dashboards,
+   * or anywhere you want to display status without touching key material.
+   */
   get metadata(): MajikKeyMetadata {
     return {
       id: this.id,
@@ -315,14 +455,18 @@ export class MajikKey {
       mnemonicLanguage: this.mnemonicLanguage || "en",
     };
   }
+
+  /** Ed25519 public key. Classical signing — same keypair the X25519 identity key is converted from. Always available, even when locked. */
   get edPublicKey(): Uint8Array | undefined {
     return this._edPublicKey;
   }
 
+  /** ML-DSA-87 (FIPS-204) public key. Post-quantum signing. Always available, even when locked. */
   get mlDsaPublicKey(): Uint8Array | undefined {
     return this._mlDsaPublicKey;
   }
 
+  /** `true` if this account has both Ed25519 and ML-DSA-87 signing keys. `false` means it's a legacy account pending migration. */
   get hasSigningKeys(): boolean {
     return (
       this._edPublicKey !== undefined && this._mlDsaPublicKey !== undefined
@@ -331,18 +475,44 @@ export class MajikKey {
 
   // ── CREATE ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Creates a brand-new MajikKey account from a BIP-39 mnemonic.
+   *
+   * Derives the full key set in one pass — X25519, ML-KEM-768, Ed25519,
+   * ML-DSA-87, and a domain-separated Bitcoin key (see `MAJIK_BITCOIN_DOMAIN_PATH`)
+   * — encrypts every private key with Argon2id (KDF v2), and returns an
+   * **already-unlocked** instance (no `unlock()` call needed right after
+   * `create()`).
+   *
+   * @param mnemonic - A valid BIP-39 mnemonic phrase (12 or 24 words), matching `mnemonicLanguage`. Generate one with `MajikKey.generateMnemonic()`.
+   * @param passphrase - Passphrase used to derive the Argon2id encryption key for every private key on this account. This is *not* the mnemonic — losing it without the mnemonic makes the account unrecoverable.
+   * @param label - Optional human-readable account name. Defaults to an empty string. Update later via `updateLabel()`.
+   * @param mnemonicLanguage - BIP-39 wordlist to validate `mnemonic` against. Defaults to `"en"`.
+   * @param options.deriveBitcoin - @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true`.
+   * @returns An unlocked `MajikKey` instance, ready for immediate use — call `.lock()` when you're done with it.
+   * @throws {MajikKeyError} If `mnemonic` fails validation, `passphrase`/`label` fail their validators, or `mnemonic` doesn't match `mnemonicLanguage`'s wordlist.
+   */
   static async create(
     mnemonic: string,
     passphrase: string,
     label?: string,
-    mnemonicLanguage: MnemonicLanguage = "en",
+    options: {
+      mnemonicLanguage?: MnemonicLanguage;
+      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
+      deriveBitcoin?: boolean;
+    } = {
+      deriveBitcoin: true,
+      mnemonicLanguage: "en",
+    },
   ): Promise<MajikKey> {
     try {
       MajikKeyValidator.validateMnemonic(mnemonic);
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
 
-      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+      const { deriveBitcoin, mnemonicLanguage } = options;
+
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage || "en");
 
       if (!validateMnemonic(mnemonic, wordlist)) {
         throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
@@ -351,6 +521,7 @@ export class MajikKey {
       const identity = await MajikKey._deriveAndEncryptFromMnemonic(
         mnemonic,
         passphrase,
+        { deriveBitcoin: deriveBitcoin },
       );
       const privateKeyBase64 = await MajikKey._exportKeyToBase64(
         identity.privateKey,
@@ -398,9 +569,9 @@ export class MajikKey {
 
         btcPublicKey: identity.btcPublicKey,
         encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
-        encryptedBtcSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedBtcSecretKey,
-        ),
+        encryptedBtcSecretKeyBase64: identity.encryptedBtcSecretKey
+          ? arrayBufferToBase64(identity.encryptedBtcSecretKey)
+          : undefined,
         btcSecretKey: identity.btcSecretKey,
 
         mnemonicLanguage: mnemonicLanguage,
@@ -1100,21 +1271,20 @@ export class MajikKey {
   /**
    * Import a MajikKey from a mnemonic-encrypted backup.
    *
-   * This is the FULL MIGRATION PATH for old accounts — Argon2id + ML-KEM in one step:
-   *   1. Verify the backup decrypts correctly (proves mnemonic is correct)
-   *   2. Re-derive the complete identity from the mnemonic (X25519 + ML-KEM-768)
-   *   3. Encrypt both private keys with Argon2id (v2) + fresh 32-byte salt
-   *   4. Return a fully-upgraded MajikKey with hasMlKem: true, isArgon2id: true
-   *
-   * Old accounts without ML-KEM keys become fully post-quantum capable
-   * automatically — no extra user steps. The mnemonic is the source of truth.
    */
   static async importFromMnemonicBackup(
     backup: string,
     mnemonic: string,
     passphrase: string,
     label?: string,
-    mnemonicLanguage: MnemonicLanguage = "en",
+    options: {
+      mnemonicLanguage?: MnemonicLanguage;
+      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
+      deriveBitcoin?: boolean;
+    } = {
+      deriveBitcoin: true,
+      mnemonicLanguage: "en",
+    },
   ): Promise<MajikKey> {
     try {
       if (!backup || typeof backup !== "string")
@@ -1123,7 +1293,9 @@ export class MajikKey {
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
 
-      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+      const { deriveBitcoin, mnemonicLanguage } = options;
+
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage || "en");
 
       if (!validateMnemonic(mnemonic, wordlist)) {
         throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
@@ -1164,6 +1336,7 @@ export class MajikKey {
       const identity = await MajikKey._deriveAndEncryptFromMnemonic(
         mnemonic,
         passphrase,
+        { deriveBitcoin: deriveBitcoin },
       );
 
       const privateKeyBase64 = await MajikKey._exportKeyToBase64(
@@ -1210,9 +1383,9 @@ export class MajikKey {
         mlDsaSecretKey: identity.mlDsaSecretKey,
         btcPublicKey: identity.btcPublicKey,
         encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
-        encryptedBtcSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedBtcSecretKey,
-        ),
+        encryptedBtcSecretKeyBase64: identity.encryptedBtcSecretKey
+          ? arrayBufferToBase64(identity.encryptedBtcSecretKey)
+          : undefined,
         btcSecretKey: identity.btcSecretKey,
       });
     } catch (err) {
@@ -1231,10 +1404,18 @@ export class MajikKey {
     return mod.wordlist;
   }
 
+  /**
+   * @param mnemonic - BIP-39 mnemonic to derive the full key set from.
+   * @param passphrase - Passphrase used to derive the Argon2id encryption key shared by every private key produced here.
+   * @param options.deriveBitcoin - @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true`.
+   */
   private static async _deriveAndEncryptFromMnemonic(
     mnemonic: string,
     passphrase: string,
+    options?: { deriveBitcoin?: boolean },
   ): Promise<MajikKeyDerivedIdentity> {
+    const deriveBitcoin = options?.deriveBitcoin ?? true;
+
     const encIdentity =
       await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
 
@@ -1258,7 +1439,7 @@ export class MajikKey {
       }
     }
 
-    // Single salt — one Argon2id derivation unlocks both keys
+    // Single salt — one Argon2id derivation unlocks every key below
     const salt = generateRandomBytes(SALT_SIZE);
     const { blob: encryptedPrivateKey } = await MajikKey._encryptPrivateKey(
       exportedXPrivate,
@@ -1273,7 +1454,6 @@ export class MajikKey {
       salt,
     );
 
-    // after the existing ML-KEM encryption block:
     const edSecretKey = encIdentity.edSecretKey;
     const encryptedEdSecretKey = await MajikKey._encryptSigningKey(
       edSecretKey,
@@ -1288,16 +1468,25 @@ export class MajikKey {
       salt,
     );
 
-    // Bitcoin — real BIP-32/BIP-84 off the raw 64-byte BIP-39 seed, using
-    // Majik's domain-separated path by default. Same salt, different IV,
-    // same pattern as ML-KEM/Ed25519/ML-DSA above.
-    const rawSeed = await mnemonicToSeed(mnemonic);
-    const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
-    const encryptedBtcSecretKey = await MajikKey._encryptSigningKey(
-      btcMaterial.privateKey,
-      passphrase,
-      salt,
-    );
+    // @experimental Bitcoin — real BIP-32/BIP-84 off the raw 64-byte BIP-39
+    // seed, using Majik's domain-separated path by default. Same salt,
+    // different IV, same pattern as ML-KEM/Ed25519/ML-DSA above. Skipped
+    // entirely when `deriveBitcoin` is false — no derivation cost paid,
+    // no key material generated.
+    let btcPublicKey: Uint8Array | undefined;
+    let btcSecretKey: Uint8Array | undefined;
+    let encryptedBtcSecretKey: ArrayBuffer | undefined;
+    if (deriveBitcoin) {
+      const rawSeed = await mnemonicToSeed(mnemonic);
+      const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
+      btcPublicKey = btcMaterial.publicKey;
+      btcSecretKey = btcMaterial.privateKey;
+      encryptedBtcSecretKey = await MajikKey._encryptSigningKey(
+        btcMaterial.privateKey,
+        passphrase,
+        salt,
+      );
+    }
 
     return {
       id: encIdentity.fingerprint,
@@ -1316,12 +1505,11 @@ export class MajikKey {
       mlDsaPublicKey: encIdentity.mlDsaPublicKey,
       mlDsaSecretKey,
       encryptedMlDsaSecretKey,
-      btcPublicKey: btcMaterial.publicKey,
-      btcSecretKey: btcMaterial.privateKey,
+      btcPublicKey,
+      btcSecretKey,
       encryptedBtcSecretKey,
     };
   }
-
   // ── PRIVATE: Encryption/Decryption ───────────────────────────────────────────
 
   private static async _encryptPrivateKey(
@@ -1539,6 +1727,9 @@ export class MajikKey {
 
   // ── WEB3 (EXPERIMENTAL) ─────────────────────────────────────────────────────
 
+  /**
+   * @experimental
+   */
   getBtcSecretKey(): Uint8Array {
     if (this.isLocked)
       throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
@@ -1551,6 +1742,9 @@ export class MajikKey {
 
   // ── WEB3 (EXPERIMENTAL) — updated getter ────────────────────────────────────
 
+  /**
+   * @experimental
+   */
   get web3(): MajikKeyWeb3Namespace | undefined {
     if (!this.hasSolanaKeypair) return undefined;
 
