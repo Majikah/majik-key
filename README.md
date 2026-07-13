@@ -1,7 +1,9 @@
 # Majik Key
 
+
+
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
-![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21339132.svg)](https://doi.org/10.5281/zenodo.21339132) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 **Majik Key** turns a single BIP-39 mnemonic into a complete cryptographic identity — encryption, classical + post-quantum signing, and (experimentally) Bitcoin and Solana keys — encrypted at rest and ready to plug into the rest of the Majikah ecosystem.
 
@@ -157,10 +159,10 @@ Majik Key can derive **Bitcoin** and **Solana** key material directly from the s
 - **Solana key derivation is on-demand.** Rather than storing a separate Solana keypair, Majik Key derives it deterministically from your Ed25519 signing key each time you access `key.web3.solana` (and caches it in memory for as long as the key stays unlocked). The base58 Solana address also works with no extra install.
 - **The optional peer dependencies are only needed for chain-native address/transaction objects:**
 
-| Chain | Peer dependency | Needed for |
-| :--- | :--- | :--- |
+| Chain   | Peer dependency     | Needed for                                                 |
+| :------ | :------------------ | :--------------------------------------------------------- |
 | Bitcoin | `@scure/btc-signer` | Native SegWit (bech32) address encoding, PSBT construction |
-| Solana | `@solana/kit` | Real `KeyPairSigner` instances, kit-native `Address` type |
+| Solana  | `@solana/kit`       | Real `KeyPairSigner` instances, kit-native `Address` type  |
 
 ```bash
 npm install @scure/btc-signer   # for Bitcoin addresses
@@ -234,38 +236,38 @@ localStorage.setItem('myKey', key.toString());
 
 ### Static Methods (Lifecycle & Generation)
 
-| Method | Parameters | Returns | Description |
-| :--- | :--- | :--- | :--- |
-| `create()` | `mnemonic`, `passphrase`, `label?`, `mnemonicLanguage?` | `Promise<MajikKey>` | Creates a new Argon2id-protected, fully post-quantum-capable account. |
-| `fromJSON()` | `json` | `MajikKey` | Loads a locked key from safe JSON storage. |
-| `fromMnemonicJSON()` | `mnemonicJson`, `passphrase`, `label?` | `Promise<MajikKey>` | Rebuilds a key straight from a portable seed export. |
-| `importFromMnemonicBackup()` | `backup`, `mnemonic`, `passphrase`, `label?`, `mnemonicLanguage?` | `Promise<MajikKey>` | Full migration path — verifies the mnemonic, then re-derives and re-encrypts the complete identity with Argon2id. |
-| `fromDangerousJSON()` | `json` | `MajikKey` | Reconstructs an already-unlocked key from a dangerous export. Server-side only — see warning below. |
-| `generateMnemonic()` | `strength?` *(128 \| 256)*, `language?` | `Promise<string>` | Generates a 12- or 24-word BIP-39 phrase. |
-| `validateMnemonic()` | `mnemonic` | `boolean` | Validates a BIP-39 mnemonic phrase. |
-| `deriveStandardBitcoinFromMnemonic()` *(experimental)* | `mnemonic`, `mnemonicLanguage?` | `Promise<BitcoinKeypairMaterial>` | Derives the real BIP-84 mainnet Bitcoin key without needing a `MajikKey` instance. |
+| Method                                                 | Parameters                                                        | Returns                           | Description                                                                                                       |
+| :----------------------------------------------------- | :---------------------------------------------------------------- | :-------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| `create()`                                             | `mnemonic`, `passphrase`, `label?`, `mnemonicLanguage?`           | `Promise<MajikKey>`               | Creates a new Argon2id-protected, fully post-quantum-capable account.                                             |
+| `fromJSON()`                                           | `json`                                                            | `MajikKey`                        | Loads a locked key from safe JSON storage.                                                                        |
+| `fromMnemonicJSON()`                                   | `mnemonicJson`, `passphrase`, `label?`                            | `Promise<MajikKey>`               | Rebuilds a key straight from a portable seed export.                                                              |
+| `importFromMnemonicBackup()`                           | `backup`, `mnemonic`, `passphrase`, `label?`, `mnemonicLanguage?` | `Promise<MajikKey>`               | Full migration path — verifies the mnemonic, then re-derives and re-encrypts the complete identity with Argon2id. |
+| `fromDangerousJSON()`                                  | `json`                                                            | `MajikKey`                        | Reconstructs an already-unlocked key from a dangerous export. Server-side only — see warning below.               |
+| `generateMnemonic()`                                   | `strength?` *(128 \| 256)*, `language?`                           | `Promise<string>`                 | Generates a 12- or 24-word BIP-39 phrase.                                                                         |
+| `validateMnemonic()`                                   | `mnemonic`                                                        | `boolean`                         | Validates a BIP-39 mnemonic phrase.                                                                               |
+| `deriveStandardBitcoinFromMnemonic()` *(experimental)* | `mnemonic`, `mnemonicLanguage?`                                   | `Promise<BitcoinKeypairMaterial>` | Derives the real BIP-84 mainnet Bitcoin key without needing a `MajikKey` instance.                                |
 
 ### Instance Methods (State & Management)
 
-| Method | Parameters | Returns | Description |
-| :--- | :--- | :--- | :--- |
-| `unlock()` | `passphrase` | `Promise<this>` | Decrypts keys into memory. Chainable. |
-| `lock()` | None | `this` | Purges all private key material (including cached Web3 keys) from memory. Chainable. |
-| `verify()` | `passphrase` | `Promise<boolean>` | Tests a passphrase without keeping keys in memory or requiring an unlock. |
-| `updatePassphrase()` | `currentPass`, `newPass` | `Promise<this>` | Re-encrypts every stored key under a new passphrase and migrates to KDF v2 if needed. |
-| `migrate()` | `passphrase` | `Promise<this>` | Upgrades the X25519 key's KDF from v1 to v2 only — does **not** add ML-KEM/Ed25519/ML-DSA/Bitcoin keys. Use `importFromMnemonicBackup()` for a full upgrade. |
-| `updateLabel()` | `newLabel` | `this` | Updates the human-readable account label. |
+| Method               | Parameters               | Returns            | Description                                                                                                                                                  |
+| :------------------- | :----------------------- | :----------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unlock()`           | `passphrase`             | `Promise<this>`    | Decrypts keys into memory. Chainable.                                                                                                                        |
+| `lock()`             | None                     | `this`             | Purges all private key material (including cached Web3 keys) from memory. Chainable.                                                                         |
+| `verify()`           | `passphrase`             | `Promise<boolean>` | Tests a passphrase without keeping keys in memory or requiring an unlock.                                                                                    |
+| `updatePassphrase()` | `currentPass`, `newPass` | `Promise<this>`    | Re-encrypts every stored key under a new passphrase and migrates to KDF v2 if needed.                                                                        |
+| `migrate()`          | `passphrase`             | `Promise<this>`    | Upgrades the X25519 key's KDF from v1 to v2 only — does **not** add ML-KEM/Ed25519/ML-DSA/Bitcoin keys. Use `importFromMnemonicBackup()` for a full upgrade. |
+| `updateLabel()`      | `newLabel`               | `this`             | Updates the human-readable account label.                                                                                                                    |
 
 ### Export & Integration Methods
 
-| Method | Returns | Description |
-| :--- | :--- | :--- |
-| `toJSON()` / `toString()` | `MajikKeyJSON` / `string` | Safe export for DB/LocalStorage. No raw keys. |
-| `toDangerousJSON()` | `MajikKeyDangerousJSON` | ⚠️ Contains every raw private key. Server-side secret injection only — see warning below. |
-| `toMnemonicJSON()` | `MnemonicJSON` | ⚠️ Contains the raw mnemonic words (and passphrase, if you pass one) in plaintext — a transport format, not an at-rest storage format. Requires the key to be unlocked. |
-| `exportMnemonicBackup()` | `Promise<string>` | Encrypted backup string, decryptable only with the original mnemonic — used to verify a mnemonic before `importFromMnemonicBackup()` re-derives the identity. |
-| `toContact()` | `MajikContact` | Extracts public identity data for sharing (the basis for Majik Universal ID). |
-| `toMajikMessageIdentity()` | `Promise<MajikMessageIdentity>` | Formats the key for direct use in Majik Message. Requires a `MajikUser`. |
+| Method                     | Returns                         | Description                                                                                                                                                            |
+| :------------------------- | :------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toJSON()` / `toString()`  | `MajikKeyJSON` / `string`       | Safe export for DB/LocalStorage. No raw keys.                                                                                                                          |
+| `toDangerousJSON()`        | `MajikKeyDangerousJSON`         | ⚠️ Contains every raw private key. Server-side secret injection only — see warning below.                                                                               |
+| `toMnemonicJSON()`         | `MnemonicJSON`                  | ⚠️ Contains the raw mnemonic words (and passphrase, if you pass one) in plaintext — a transport format, not an at-rest storage format. Requires the key to be unlocked. |
+| `exportMnemonicBackup()`   | `Promise<string>`               | Encrypted backup string, decryptable only with the original mnemonic — used to verify a mnemonic before `importFromMnemonicBackup()` re-derives the identity.          |
+| `toContact()`              | `MajikContact`                  | Extracts public identity data for sharing (the basis for Majik Universal ID).                                                                                          |
+| `toMajikMessageIdentity()` | `Promise<MajikMessageIdentity>` | Formats the key for direct use in Majik Message. Requires a `MajikUser`.                                                                                               |
 
 ### Instance Getters
 
@@ -279,14 +281,14 @@ localStorage.setItem('myKey', key.toString());
 
 ### Web3 (Experimental)
 
-| Member | Returns | Notes |
-| :--- | :--- | :--- |
-| `web3` *(getter)* | `{ solana, bitcoin? } \| undefined` | `undefined` if locked or has no Ed25519 signing key. `bitcoin` is present only if the account has stored Bitcoin key material. |
-| `getBitcoinKeypairMaterial()` | `BitcoinKeypairMaterial` | Raw Bitcoin keypair bytes. |
-| `getBitcoinWIF()` | `string` | Wallet Import Format string, pastes into any standard Bitcoin wallet. |
-| `getSolanaKeypairMaterial()` | `SolanaKeypairMaterial` | Raw Solana keypair bytes. |
-| `getSolanaKeypair()` | `Promise<any>` | Real `@solana/kit` `KeyPairSigner`. Requires `@solana/kit`. |
-| `getSolanaAddress()` | `string` | Base58 Solana address. No extra dependency required. |
+| Member                        | Returns                             | Notes                                                                                                                          |
+| :---------------------------- | :---------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| `web3` *(getter)*             | `{ solana, bitcoin? } \| undefined` | `undefined` if locked or has no Ed25519 signing key. `bitcoin` is present only if the account has stored Bitcoin key material. |
+| `getBitcoinKeypairMaterial()` | `BitcoinKeypairMaterial`            | Raw Bitcoin keypair bytes.                                                                                                     |
+| `getBitcoinWIF()`             | `string`                            | Wallet Import Format string, pastes into any standard Bitcoin wallet.                                                          |
+| `getSolanaKeypairMaterial()`  | `SolanaKeypairMaterial`             | Raw Solana keypair bytes.                                                                                                      |
+| `getSolanaKeypair()`          | `Promise<any>`                      | Real `@solana/kit` `KeyPairSigner`. Requires `@solana/kit`.                                                                    |
+| `getSolanaAddress()`          | `string`                            | Base58 Solana address. No extra dependency required.                                                                           |
 
 ---
 
@@ -393,6 +395,7 @@ Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https:/
 **Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)
 **GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
 **Project Repository**: [https://github.com/Majikah/majik-signature](https://github.com/Majikah/majik-signature)
+**Technical Whitepaper**: [https://zenodo.org/records/21339132](https://zenodo.org/records/21339132)
 
 ---
 
