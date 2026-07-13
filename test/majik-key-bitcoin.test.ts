@@ -44,7 +44,9 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
 
   beforeAll(async () => {
     mnemonic = await MajikKey.generateMnemonic(128, "en");
-    majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, "en");
+    majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, {
+      mnemonicLanguage: "en",
+    });
   }, CRYPTO_TIMEOUT);
 
   // ── AVAILABILITY / STATE CHECKS ──────────────────────────────────────────

@@ -806,6 +806,14 @@ export class MajikKey {
     mnemonicJson: MnemonicJSON | string,
     passphrase: string,
     label?: string,
+    options: {
+      mnemonicLanguage?: MnemonicLanguage;
+      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
+      deriveBitcoin?: boolean;
+    } = {
+      deriveBitcoin: true,
+      mnemonicLanguage: "en",
+    },
   ): Promise<MajikKey> {
     try {
       const parsed: MnemonicJSON =
@@ -816,7 +824,7 @@ export class MajikKey {
         throw new MajikKeyError("Invalid MnemonicJSON");
       const mnemonic = seedArrayToString(parsed.seed);
       MajikKeyValidator.validateMnemonic(mnemonic);
-      return await MajikKey.create(mnemonic, passphrase, label);
+      return await MajikKey.create(mnemonic, passphrase, label, options);
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError(

@@ -183,7 +183,7 @@ const standardBtc = await MajikKey.deriveStandardBitcoinFromMnemonic(mnemonic);
 
 ### Two Solana paths, on purpose
 
-By default (`deriveSolanaKeypairFromEdSecretKey`), the Solana keypair is domain-separated from your Ed25519 message-signing key via `SHA256(edSeed || "MajikMessageSolanaSeed")`, so the same private key never secures two different protocols. You can opt into reusing your Ed25519 message-signing key directly instead:
+By default (`deriveSolanaKeypairFromEdSecretKey`), the Solana keypair is domain-separated from your Ed25519 message-signing key via `SHA256(edSeed || "MajikKeySolanaSeed")`, so the same private key never secures two different protocols. You can opt into reusing your Ed25519 message-signing key directly instead:
 
 ```typescript
 // Recommended: domain-separated Solana key

@@ -24,7 +24,6 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { MajikKey } from "../src/majik-key";
 import { base58Encode } from "../src/core/web3/utils";
 
-
 const CRYPTO_TIMEOUT = 60_000;
 
 let solanaKitAvailable = true;
@@ -43,7 +42,9 @@ describe("MajikKey Solana Integration (Experimental)", () => {
 
   beforeAll(async () => {
     mnemonic = await MajikKey.generateMnemonic(128, "en");
-    majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, "en");
+    majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, {
+      mnemonicLanguage: "en",
+    });
   }, CRYPTO_TIMEOUT);
 
   // ── AVAILABILITY / STATE CHECKS ──────────────────────────────────────────
