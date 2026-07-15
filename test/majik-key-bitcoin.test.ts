@@ -432,12 +432,21 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
       async () => {
         const before = majikKey.getBitcoinKeypairMaterial();
 
+        // 1. Create hard copies of the bytes before locking
+        const expectedPublicKey = new Uint8Array(before.publicKey);
+        const expectedPrivateKey = new Uint8Array(before.privateKey);
+
+        // 2. Lock the key (this safely zeroes out the original 'before' references)
         majikKey.lock();
+
+        // 3. Unlock and generate fresh arrays
         await majikKey.unlock(PASSPHRASE);
 
         const after = majikKey.getBitcoinKeypairMaterial();
-        expect(after.publicKey).toEqual(before.publicKey);
-        expect(after.privateKey).toEqual(before.privateKey);
+
+        // 4. Compare the newly derived arrays against your hard copies
+        expect(after.publicKey).toEqual(expectedPublicKey);
+        expect(after.privateKey).toEqual(expectedPrivateKey);
       },
       CRYPTO_TIMEOUT,
     );

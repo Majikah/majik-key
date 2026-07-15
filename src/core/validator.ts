@@ -114,3 +114,6 @@ export class MajikKeyValidator {
     );
   }
 }
+
+Object.freeze(MajikKeyValidator);
+Object.freeze(MajikKeyValidator.prototype);

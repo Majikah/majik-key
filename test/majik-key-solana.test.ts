@@ -272,12 +272,21 @@ describe("MajikKey Solana Integration (Experimental)", () => {
       async () => {
         const before = majikKey.getSolanaKeypairMaterial();
 
+        // 1. Create hard copies of the bytes before locking
+        const expectedPublicKey = new Uint8Array(before.publicKey);
+        const expectedSecretKey = new Uint8Array(before.secretKey);
+
+        // 2. Lock the key (this safely zeroes out the original 'before' references)
         majikKey.lock();
+
+        // 3. Unlock and generate fresh arrays
         await majikKey.unlock(PASSPHRASE);
 
         const after = majikKey.getSolanaKeypairMaterial();
-        expect(after.publicKey).toEqual(before.publicKey);
-        expect(after.secretKey).toEqual(before.secretKey);
+
+        // 4. Compare the newly derived arrays against your hard copies
+        expect(after.publicKey).toEqual(expectedPublicKey);
+        expect(after.secretKey).toEqual(expectedSecretKey);
       },
       CRYPTO_TIMEOUT,
     );

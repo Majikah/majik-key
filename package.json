@@ -48,6 +48,7 @@
     "package": "npm run build && npm version patch && git push && git push --tags",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:compat": "npx vitest test/majik-key-cross-compat.test.ts",
     "test:web3:bitcoin": "npx vitest test/majik-key-bitcoin.test.ts",
     "test:web3:solana": "npx vitest test/majik-key-solana.test.ts",
     "test:web3": "npx vitest test/majik-key-bitcoin.test.ts test/majik-key-solana.test.ts",

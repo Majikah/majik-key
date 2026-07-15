@@ -68,6 +68,8 @@ import {
   toSolanaKeyPairSigner,
 } from "./core/web3";
 
+const secureFill = Uint8Array.prototype.fill;
+
 const SALT_SIZE = 32;
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -846,21 +848,20 @@ export class MajikKey {
     currentPassphrase: string,
     newPassphrase: string,
   ): Promise<this> {
+    MajikKeyValidator.validatePassphrase(
+      currentPassphrase,
+      "Current passphrase",
+    );
+    MajikKeyValidator.validatePassphrase(newPassphrase, "New passphrase");
+    const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
+    const privateKeyBuffer = await MajikKey._decryptPrivateKey(
+      this._encryptedPrivateKey,
+      currentPassphrase,
+      salt,
+      this._kdfVersion,
+    );
+
     try {
-      MajikKeyValidator.validatePassphrase(
-        currentPassphrase,
-        "Current passphrase",
-      );
-      MajikKeyValidator.validatePassphrase(newPassphrase, "New passphrase");
-
-      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-      const privateKeyBuffer = await MajikKey._decryptPrivateKey(
-        this._encryptedPrivateKey,
-        currentPassphrase,
-        salt,
-        this._kdfVersion,
-      );
-
       let mlKemSecretKeyBytes: Uint8Array | undefined;
       if (this._encryptedMlKemSecretKey) {
         mlKemSecretKeyBytes = await MajikKey._decryptMlKemSecretKey(
@@ -947,6 +948,10 @@ export class MajikKey {
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError("Failed to update passphrase", err);
+    } finally {
+      // Clear the temporary unencrypted buffer
+      secureFill.call(new Uint8Array(privateKeyBuffer), 0);
+      secureFill.call(salt, 0);
     }
   }
 
@@ -987,6 +992,23 @@ export class MajikKey {
 
   // required
   lock(): this {
+    // 1. Zeroize raw bytes of all active keys
+    // Apply the secure fill using .call(targetArray, value)
+    if (
+      this._privateKey &&
+      "raw" in this._privateKey &&
+      this._privateKey.raw instanceof Uint8Array
+    ) {
+      secureFill.call(this._privateKey.raw, 0);
+    }
+    if (this._mlKemSecretKey) secureFill.call(this._mlKemSecretKey, 0);
+    if (this._edSecretKey) secureFill.call(this._edSecretKey, 0);
+    if (this._mlDsaSecretKey) secureFill.call(this._mlDsaSecretKey, 0);
+    if (this._btcSecretKey) secureFill.call(this._btcSecretKey, 0);
+
+    if (this._solanaKeypairMaterial) {
+      secureFill.call(this._solanaKeypairMaterial.secretKey, 0);
+    }
     this._privateKey = undefined;
     this._privateKeyBase64 = undefined;
     this._mlKemSecretKey = undefined;
@@ -1914,3 +1936,10 @@ export class MajikKey {
     );
   }
 }
+
+
+// Freeze static methods (e.g., MajikKey.create, MajikKey.fromJSON)
+Object.freeze(MajikKey);
+
+// Freeze instance methods (e.g., this.lock, this.unlock)
+Object.freeze(MajikKey.prototype);

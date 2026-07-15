@@ -12,11 +12,13 @@ import { ARGON2_PARAMS } from "./constants";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { argon2id as hashWasmArgon2id } from "hash-wasm";
 
+const secureGetRandomValues = crypto.getRandomValues.bind(crypto);
+
 export const IV_LENGTH = 12;
 
 export function generateRandomBytes(len: number): Uint8Array {
   const b = new Uint8Array(len);
-  crypto.getRandomValues(b);
+  secureGetRandomValues(b);
   return b;
 }
 

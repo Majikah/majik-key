@@ -12,6 +12,8 @@ import { concatUint8Arrays } from "../utils";
 import { hash } from "@stablelib/sha256";
 import { MAJIK_SIGNATURE_SEED } from "./constants";
 
+const secureFill = Uint8Array.prototype.fill;
+
 export interface EncryptionIdentity {
   publicKey: CryptoKey | { raw: Uint8Array }; // X25519 public key
   privateKey: CryptoKey | { raw: Uint8Array }; // X25519 private key
@@ -57,17 +59,16 @@ export class EncryptionEngine {
   static async deriveIdentityFromMnemonic(
     mnemonic: string,
   ): Promise<EncryptionIdentity> {
+    if (typeof mnemonic !== "string" || mnemonic.trim().length === 0) {
+      throw new CryptoError("Mnemonic must be a non-empty string");
+    }
+    // Step 1: BIP-39 seed → 64 bytes
+    const seed = mnemonicToSeedSync(mnemonic); // returns Buffer (Node) or Uint8Array
+    const seed64 = new Uint8Array(seed); // normalize to Uint8Array
+
+    // Step 2: X25519 identity from first 32 bytes (existing path)
+    const seed32 = seed64.subarray(0, 32);
     try {
-      if (typeof mnemonic !== "string" || mnemonic.trim().length === 0) {
-        throw new CryptoError("Mnemonic must be a non-empty string");
-      }
-
-      // Step 1: BIP-39 seed → 64 bytes
-      const seed = mnemonicToSeedSync(mnemonic); // returns Buffer (Node) or Uint8Array
-      const seed64 = new Uint8Array(seed); // normalize to Uint8Array
-
-      // Step 2: X25519 identity from first 32 bytes (existing path)
-      const seed32 = seed64.subarray(0, 32);
       const ed = ed25519.generateKeyPairFromSeed(seed32);
       const skCurve = ed2curve.convertSecretKey(ed.secretKey);
       const pkCurve = ed2curve.convertPublicKey(ed.publicKey);
@@ -112,6 +113,14 @@ export class EncryptionEngine {
       };
     } catch (err) {
       throw new CryptoError("Failed to derive identity from mnemonic", err);
+    } finally {
+      // CRITICAL: Zeroize the master seed
+      secureFill.call(seed64, 0);
+      secureFill.call(seed32, 0);
+
+      if (seed instanceof Uint8Array) {
+        secureFill.call(seed, 0);
+      }
     }
   }
 
@@ -169,3 +178,7 @@ export class CryptoError extends Error {
     this.cause = cause;
   }
 }
+
+
+Object.freeze(EncryptionEngine);
+Object.freeze(EncryptionEngine.prototype);
