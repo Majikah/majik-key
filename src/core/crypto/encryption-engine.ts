@@ -15,8 +15,8 @@ import { MAJIK_SIGNATURE_SEED } from "./constants";
 const secureFill = Uint8Array.prototype.fill;
 
 export interface EncryptionIdentity {
-  publicKey: CryptoKey | { raw: Uint8Array }; // X25519 public key
-  privateKey: CryptoKey | { raw: Uint8Array }; // X25519 private key
+  publicKey: { raw: Uint8Array }; // X25519 public key
+  privateKey: { raw: Uint8Array }; // X25519 private key
   fingerprint: string; // SHA-256 of X25519 public key
   mlKemPublicKey: Uint8Array; // ML-KEM-768 public key (1184 bytes)
   mlKemSecretKey?: Uint8Array; // ML-KEM-768 secret key (2400 bytes)
@@ -66,6 +66,18 @@ export class EncryptionEngine {
     const seed = mnemonicToSeedSync(mnemonic); // returns Buffer (Node) or Uint8Array
     const seed64 = new Uint8Array(seed); // normalize to Uint8Array
 
+    // Step 3: ML-KEM-768 keypair from FULL 64-byte seed (new)
+    // ml_kem768.keygen() accepts a 64-byte seed directly.
+    // seed[0..32] → lattice key matrix expansion (K-PKE keygen)
+    // seed[32..64] → implicit rejection parameter z (stored in secretKey)
+    const mlKemKeypair = deriveMlKemKeypairFromSeed(seed64);
+
+    const mlDsaSeedInput = concatUint8Arrays(
+      seed64,
+      new TextEncoder().encode(MAJIK_SIGNATURE_SEED),
+    );
+    const mlDsaSeed = hash(mlDsaSeedInput);
+
     // Step 2: X25519 identity from first 32 bytes (existing path)
     const seed32 = seed64.subarray(0, 32);
     try {
@@ -86,19 +98,6 @@ export class EncryptionEngine {
       const privateKey = { type: "private", raw: skCurveBytes } as any;
       const fingerprint = fingerprintFromPublicRaw(pkCurveBytes);
 
-      // Step 3: ML-KEM-768 keypair from FULL 64-byte seed (new)
-      // ml_kem768.keygen() accepts a 64-byte seed directly.
-      // seed[0..32] → lattice key matrix expansion (K-PKE keygen)
-      // seed[32..64] → implicit rejection parameter z (stored in secretKey)
-      const mlKemKeypair = deriveMlKemKeypairFromSeed(seed64);
-
-      const mlDsaSeed = hash(
-        concatUint8Arrays(
-          seed64,
-          new TextEncoder().encode(MAJIK_SIGNATURE_SEED),
-        ),
-      ); // 32 bytes, deterministic, domain-separated
-
       const mlDsaKeypair = ml_dsa87.keygen(mlDsaSeed);
       return {
         publicKey,
@@ -114,13 +113,11 @@ export class EncryptionEngine {
     } catch (err) {
       throw new CryptoError("Failed to derive identity from mnemonic", err);
     } finally {
-      // CRITICAL: Zeroize the master seed
       secureFill.call(seed64, 0);
       secureFill.call(seed32, 0);
-
-      if (seed instanceof Uint8Array) {
-        secureFill.call(seed, 0);
-      }
+      secureFill.call(mlDsaSeedInput, 0);
+      secureFill.call(mlDsaSeed, 0);
+      if (seed instanceof Uint8Array) secureFill.call(seed, 0);
     }
   }
 
@@ -178,7 +175,6 @@ export class CryptoError extends Error {
     this.cause = cause;
   }
 }
-
 
 Object.freeze(EncryptionEngine);
 Object.freeze(EncryptionEngine.prototype);

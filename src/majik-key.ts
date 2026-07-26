@@ -89,11 +89,11 @@ export interface MajikKeyIdentity {
   /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
   id: string;
   /** X25519 public key — native `CryptoKey` where WebCrypto supports it, otherwise a raw-bytes wrapper. */
-  publicKey: CryptoKey | { raw: Uint8Array };
+  publicKey: { raw: Uint8Array };
   /** SHA-256 fingerprint of `publicKey`. */
   fingerprint: MajikKeyFingerprint;
   /** X25519 private key, decrypted into memory. ⚠️ Live key material — do not log or serialize directly. */
-  privateKey: CryptoKey | { raw: Uint8Array };
+  privateKey: { raw: Uint8Array };
   /** AES-256-GCM-encrypted X25519 private key (IV + ciphertext), as stored at rest. */
   encryptedPrivateKey: ArrayBuffer;
   /** Random salt used to derive the passphrase-based encryption key. Base64. */
@@ -170,7 +170,7 @@ export interface SerializedIdentity {
  */
 export interface MajikKeyConstructorOptions {
   id: string;
-  publicKey: CryptoKey | { raw: Uint8Array };
+  publicKey: { raw: Uint8Array };
   publicKeyBase64: MajikKeyAddress;
   fingerprint: MajikKeyFingerprint;
   encryptedPrivateKey: ArrayBuffer;
@@ -188,9 +188,7 @@ export interface MajikKeyConstructorOptions {
   encryptedMlKemSecretKey?: ArrayBuffer;
   encryptedMlKemSecretKeyBase64?: string;
   /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
-  privateKey?: CryptoKey | { raw: Uint8Array };
-  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
-  privateKeyBase64?: string;
+  privateKey?: { raw: Uint8Array };
 
   edPublicKey?: Uint8Array;
   encryptedEdSecretKey?: ArrayBuffer;
@@ -241,7 +239,7 @@ export interface MajikKeyConstructorOptions {
  */
 export class MajikKey {
   private readonly _id: string;
-  private readonly _publicKey: CryptoKey | { raw: Uint8Array };
+  private readonly _publicKey: { raw: Uint8Array };
   private readonly _publicKeyBase64: string;
   private readonly _fingerprint: string;
   private readonly _backup: string;
@@ -259,8 +257,7 @@ export class MajikKey {
   private _encryptedMlKemSecretKey?: ArrayBuffer;
   private _encryptedMlKemSecretKeyBase64?: string;
 
-  private _privateKey?: CryptoKey | { raw: Uint8Array };
-  private _privateKeyBase64?: string;
+  private _privateKey?: { raw: Uint8Array };
 
   private _edPublicKey?: Uint8Array;
   private _edSecretKey?: Uint8Array;
@@ -314,7 +311,6 @@ export class MajikKey {
     this._encryptedMlKemSecretKey = options.encryptedMlKemSecretKey;
     this._encryptedMlKemSecretKeyBase64 = options.encryptedMlKemSecretKeyBase64;
     this._privateKey = options.privateKey;
-    this._privateKeyBase64 = options.privateKeyBase64;
 
     this._edPublicKey = options.edPublicKey;
     this._encryptedEdSecretKey = options.encryptedEdSecretKey;
@@ -554,7 +550,7 @@ export class MajikKey {
           identity.encryptedMlKemSecretKey,
         ),
         privateKey: identity.privateKey,
-        privateKeyBase64,
+
         edPublicKey: identity.edPublicKey,
         encryptedEdSecretKey: identity.encryptedEdSecretKey,
         encryptedEdSecretKeyBase64: arrayBufferToBase64(
@@ -697,7 +693,7 @@ export class MajikKey {
       !this._edSecretKey ||
       !this._mlDsaSecretKey ||
       !this._mlKemSecretKey ||
-      !this._privateKeyBase64
+      !this._privateKey
     )
       throw new MajikKeyError(
         "MajikKey is missing secret keys — re-import via importFromMnemonicBackup() first.",
@@ -705,7 +701,7 @@ export class MajikKey {
 
     return {
       ...this.toJSON(),
-      privateKeyBase64: this._privateKeyBase64,
+      privateKeyBase64: arrayToBase64(this._privateKey.raw),
       mlKemSecretKeyBase64: arrayToBase64(this._mlKemSecretKey),
       edSecretKeyBase64: arrayToBase64(this._edSecretKey),
       mlDsaSecretKeyBase64: arrayToBase64(this._mlDsaSecretKey),
@@ -763,7 +759,6 @@ export class MajikKey {
         publicKey: { raw: base64ToUint8Array(parsed.publicKey) },
         publicKeyBase64: parsed.publicKey,
         privateKey: { raw: privateKeyBytes },
-        privateKeyBase64: parsed.privateKeyBase64,
         encryptedPrivateKey: new ArrayBuffer(0),
         encryptedPrivateKeyBase64: parsed.encryptedPrivateKey,
         salt: parsed.salt,
@@ -848,6 +843,8 @@ export class MajikKey {
     currentPassphrase: string,
     newPassphrase: string,
   ): Promise<this> {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey must be unlocked to update passphrase");
     MajikKeyValidator.validatePassphrase(
       currentPassphrase,
       "Current passphrase",
@@ -893,6 +890,7 @@ export class MajikKey {
         );
         this._encryptedMlKemSecretKey = encMlKem;
         this._encryptedMlKemSecretKeyBase64 = arrayBufferToBase64(encMlKem);
+        if (this._mlKemSecretKey) secureFill.call(this._mlKemSecretKey, 0);
         this._mlKemSecretKey = mlKemSecretKeyBytes;
       }
 
@@ -909,6 +907,7 @@ export class MajikKey {
         );
         this._encryptedEdSecretKey = encEd;
         this._encryptedEdSecretKeyBase64 = arrayBufferToBase64(encEd);
+        if (this._edSecretKey) secureFill.call(this._edSecretKey, 0);
         this._edSecretKey = edSecretKeyBytes;
       }
 
@@ -925,6 +924,7 @@ export class MajikKey {
         );
         this._encryptedMlDsaSecretKey = encDsa;
         this._encryptedMlDsaSecretKeyBase64 = arrayBufferToBase64(encDsa);
+        if (this._mlDsaSecretKey) secureFill.call(this._mlDsaSecretKey, 0);
         this._mlDsaSecretKey = mlDsaSecretKeyBytes;
       }
 
@@ -941,6 +941,7 @@ export class MajikKey {
         );
         this._encryptedBtcSecretKey = encBtc;
         this._encryptedBtcSecretKeyBase64 = arrayBufferToBase64(encBtc);
+        if (this._btcSecretKey) secureFill.call(this._btcSecretKey, 0);
         this._btcSecretKey = btcSecretKeyBytes;
       }
 
@@ -960,12 +961,13 @@ export class MajikKey {
    * NOTE: Does not add ML-KEM keys — use importFromMnemonicBackup() for full upgrade.
    */
   async migrate(passphrase: string): Promise<this> {
-    try {
-      MajikKeyValidator.validatePassphrase(passphrase);
-      if (this._kdfVersion === KDF_VERSION.ARGON2ID) return this;
+    MajikKeyValidator.validatePassphrase(passphrase);
+    if (this._kdfVersion === KDF_VERSION.ARGON2ID) return this;
 
-      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-      const privateKeyBuffer = await MajikKey._decryptPrivateKey(
+    const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
+    let privateKeyBuffer: ArrayBuffer | undefined;
+    try {
+      privateKeyBuffer = await MajikKey._decryptPrivateKey(
         this._encryptedPrivateKey,
         passphrase,
         salt,
@@ -985,6 +987,10 @@ export class MajikKey {
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError("Failed to migrate MajikKey to Argon2id", err);
+    } finally {
+      if (privateKeyBuffer)
+        secureFill.call(new Uint8Array(privateKeyBuffer), 0);
+      secureFill.call(salt, 0);
     }
   }
 
@@ -1010,7 +1016,6 @@ export class MajikKey {
       secureFill.call(this._solanaKeypairMaterial.secretKey, 0);
     }
     this._privateKey = undefined;
-    this._privateKeyBase64 = undefined;
     this._mlKemSecretKey = undefined;
     this._edSecretKey = undefined;
     this._mlDsaSecretKey = undefined;
@@ -1033,23 +1038,12 @@ export class MajikKey {
         this._kdfVersion,
       );
 
-      let privateKey: CryptoKey | { raw: Uint8Array };
-      try {
-        privateKey = await crypto.subtle.importKey(
-          "raw",
-          privateKeyBuffer,
-          KEY_ALGO,
-          true,
-          ["sign"],
-        );
-      } catch {
-        privateKey = {
-          type: "private",
-          raw: new Uint8Array(privateKeyBuffer),
-        } as any;
-      }
+      const privateKey = {
+        type: "private",
+        raw: new Uint8Array(privateKeyBuffer),
+      };
+
       this._privateKey = privateKey;
-      this._privateKeyBase64 = arrayBufferToBase64(privateKeyBuffer);
 
       if (this._encryptedMlKemSecretKey) {
         this._mlKemSecretKey = await MajikKey._decryptMlKemSecretKey(
@@ -1117,7 +1111,7 @@ export class MajikKey {
   getPrivateKeyBase64(): string {
     if (this.isLocked)
       throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    return this._privateKeyBase64!;
+    return arrayToBase64(this._privateKey!.raw);
   }
 
   getMlKemSecretKey(): Uint8Array {
@@ -1398,7 +1392,6 @@ export class MajikKey {
           identity.encryptedMlKemSecretKey,
         ),
         privateKey: identity.privateKey,
-        privateKeyBase64,
         edPublicKey: identity.edPublicKey,
         encryptedEdSecretKey: identity.encryptedEdSecretKey,
         encryptedEdSecretKeyBase64: arrayBufferToBase64(
@@ -1449,25 +1442,12 @@ export class MajikKey {
     const encIdentity =
       await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
 
-    let exportedXPrivate: ArrayBuffer;
-    try {
-      exportedXPrivate = await crypto.subtle.exportKey(
-        "raw",
-        encIdentity.privateKey as CryptoKey,
-      );
-    } catch {
-      const anyPriv: any = encIdentity.privateKey;
-      if (anyPriv?.raw instanceof Uint8Array) {
-        exportedXPrivate = anyPriv.raw.buffer.slice(
-          anyPriv.raw.byteOffset,
-          anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
-        );
-      } else {
-        throw new MajikKeyError(
-          "Cannot export private key: unsupported format",
-        );
-      }
-    }
+    const anyPriv: any = encIdentity.privateKey;
+
+    const exportedXPrivate = anyPriv.raw.buffer.slice(
+      anyPriv.raw.byteOffset,
+      anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
+    );
 
     // Single salt — one Argon2id derivation unlocks every key below
     const salt = generateRandomBytes(SALT_SIZE);
@@ -1626,12 +1606,16 @@ export class MajikKey {
     salt: Uint8Array,
   ): Promise<Uint8Array> {
     const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
-    const full = new Uint8Array(buffer);
-    const iv = full.slice(0, IV_LENGTH);
-    const ciphertext = full.slice(IV_LENGTH);
-    const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
-    if (!plain) throw new MajikKeyError("Failed to decrypt signing key");
-    return plain;
+    try {
+      const full = new Uint8Array(buffer);
+      const iv = full.slice(0, IV_LENGTH);
+      const ciphertext = full.slice(IV_LENGTH);
+      const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
+      if (!plain) throw new MajikKeyError("Failed to decrypt signing key");
+      return plain;
+    } finally {
+      secureFill.call(keyBytes, 0);
+    }
   }
 
   // ── PRIVATE: Backup ──────────────────────────────────────────────────────────
@@ -1679,34 +1663,18 @@ export class MajikKey {
     if (!identity?.privateKey)
       throw new MajikKeyError("Identity must have privateKey to export backup");
 
-    let privRawBuf: ArrayBuffer;
-    let pubRawBuf: ArrayBuffer;
+    const anyPriv = identity.privateKey;
+    const anyPub = identity.publicKey;
 
-    try {
-      privRawBuf = await crypto.subtle.exportKey(
-        "raw",
-        identity.privateKey as CryptoKey,
-      );
-      pubRawBuf = await crypto.subtle.exportKey(
-        "raw",
-        identity.publicKey as CryptoKey,
-      );
-    } catch {
-      const anyPriv: any = identity.privateKey;
-      const anyPub: any = identity.publicKey;
-      if (anyPriv?.raw instanceof Uint8Array) {
-        privRawBuf = anyPriv.raw.buffer.slice(
-          anyPriv.raw.byteOffset,
-          anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
-        );
-      } else throw new MajikKeyError("Cannot export private key");
-      if (anyPub?.raw instanceof Uint8Array) {
-        pubRawBuf = anyPub.raw.buffer.slice(
-          anyPub.raw.byteOffset,
-          anyPub.raw.byteOffset + anyPub.raw.byteLength,
-        );
-      } else throw new MajikKeyError("Cannot export public key");
-    }
+    const privRawBuf = anyPriv.raw.buffer.slice(
+      anyPriv.raw.byteOffset,
+      anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
+    );
+
+    const pubRawBuf = anyPub.raw.buffer.slice(
+      anyPub.raw.byteOffset,
+      anyPub.raw.byteOffset + anyPub.raw.byteLength,
+    );
 
     const mnemonicSalt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
     const keyBytes = await deriveKeyFromMnemonicArgon2(mnemonic, mnemonicSalt);
@@ -1718,7 +1686,7 @@ export class MajikKey {
         id: identity.id,
         iv: arrayToBase64(iv),
         ciphertext: arrayToBase64(ciphertext),
-        publicKey: arrayBufferToBase64(pubRawBuf),
+        publicKey: arrayBufferToBase64(pubRawBuf as ArrayBuffer),
         fingerprint: identity.fingerprint,
         backupKdfVersion: KDF_VERSION.ARGON2ID,
       }),
@@ -1936,7 +1904,6 @@ export class MajikKey {
     );
   }
 }
-
 
 // Freeze static methods (e.g., MajikKey.create, MajikKey.fromJSON)
 Object.freeze(MajikKey);

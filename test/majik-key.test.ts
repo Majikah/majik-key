@@ -530,10 +530,12 @@ describe("MajikKey Class Unit Tests", () => {
         const mnemonic = await MajikKey.generateMnemonic(128, "en");
         const key = await MajikKey.create(mnemonic, PASSPHRASE, "Rotate All");
 
-        const mlKemBefore = key.getMlKemSecretKey();
-        const edBefore = key.getEdSecretKey();
-        const mlDsaBefore = key.getMlDsaSecretKey();
-        const btcBefore = key.getBtcSecretKey();
+        // Clone the keys before updating the passphrase
+        const mlKemBefore = new Uint8Array(key.getMlKemSecretKey());
+        const edBefore = new Uint8Array(key.getEdSecretKey());
+        const mlDsaBefore = new Uint8Array(key.getMlDsaSecretKey());
+        const btcBefore = new Uint8Array(key.getBtcSecretKey());
+
         const saltBefore = key.toJSON().salt;
 
         const ROTATE_PASS = "RotateAllBlobs!321";

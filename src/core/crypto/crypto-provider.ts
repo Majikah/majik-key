@@ -13,6 +13,7 @@ import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { argon2id as hashWasmArgon2id } from "hash-wasm";
 
 const secureGetRandomValues = crypto.getRandomValues.bind(crypto);
+const secureFill = Uint8Array.prototype.fill;
 
 export const IV_LENGTH = 12;
 
@@ -178,10 +179,13 @@ export async function deriveKeyFromPassphraseArgon2(
   salt: Uint8Array,
 ): Promise<Uint8Array> {
   const pw = new TextEncoder().encode(passphrase);
-  const result = await _argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
-  return result.slice(); // ← force a copy out of WASM memory
+  try {
+    const result = await _argon2id(pw, salt, ARGON2_PARAMS.PASSPHRASE);
+    return result.slice();
+  } finally {
+    secureFill.call(pw, 0);
+  }
 }
-
 /**
  * Derive a 32-byte AES key from a BIP-39 mnemonic using Argon2id.
  * WASM-accelerated via hash-wasm when available, falls back to @noble/hashes.
@@ -195,8 +199,12 @@ export async function deriveKeyFromMnemonicArgon2(
   salt: Uint8Array,
 ): Promise<Uint8Array> {
   const m = new TextEncoder().encode(mnemonic);
-  const result = await _argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
-  return result.slice(); // ← force a copy out of WASM memory
+  try {
+    const result = await _argon2id(m, salt, ARGON2_PARAMS.MNEMONIC);
+    return result.slice(); // ← force a copy out of WASM memory
+  } finally {
+    secureFill.call(m, 0);
+  }
 }
 
 // ─── KDF v1: PBKDF2-SHA256 (legacy — do not use for new operations) ───────────

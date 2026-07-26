@@ -483,7 +483,12 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
     it(
       "should decrypt to the identical Bitcoin keypair under the new passphrase",
       async () => {
-        const before = majikKey.getBitcoinKeypairMaterial();
+        const beforeMaterial = majikKey.getBitcoinKeypairMaterial();
+        // Clone the arrays so they aren't affected by secureFill
+        const before = {
+          publicKey: new Uint8Array(beforeMaterial.publicKey),
+          privateKey: new Uint8Array(beforeMaterial.privateKey),
+        };
         const NEW_PASS = "RotatedPass!789";
 
         await majikKey.updatePassphrase(PASSPHRASE, NEW_PASS);
