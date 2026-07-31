@@ -796,6 +796,7 @@ export class MajikKey {
       id: this._backup,
       seed: seedStringToArray(mnemonic.trim()),
       phrase: passphrase?.trim() || undefined,
+      language: this._mnemonicLanguage,
     };
   }
 

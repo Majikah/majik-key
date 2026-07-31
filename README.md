@@ -1,12 +1,15 @@
 # Majik Key
 
+[![ZENODO](https://img.shields.io/badge/Read_the_Technical_Whitepaper_Here-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.21339132)
 
 
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21339132.svg)](https://doi.org/10.5281/zenodo.21339132) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 
 **Majik Key** turns a single BIP-39 mnemonic into a complete cryptographic identity — encryption, classical + post-quantum signing, and (experimentally) Bitcoin and Solana keys — encrypted at rest and ready to plug into the rest of the Majikah ecosystem.
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21339132.svg)](https://doi.org/10.5281/zenodo.21339132) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 

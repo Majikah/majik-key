@@ -146,4 +146,6 @@ export interface MnemonicJSON {
   id: string;
   /** Optional passphrase, carried in plaintext for convenience during export/import. ⚠️ Not encrypted. */
   phrase?: string;
+
+  language?: MnemonicLanguage;
 }
