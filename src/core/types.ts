@@ -3,12 +3,16 @@ import { MnemonicLanguage } from "./crypto/wordlist";
 /** ISO 8601 timestamp string, e.g. `"2026-07-11T00:00:00.000Z"`. */
 export type ISODateString = string;
 
-
 /** Base64-encoded public key material. Safe to store, log, or transmit. */
 export type MajikKeyAddress = string;
 
 /** Base64-encoded SHA-256 digest of a MajikKey's X25519 public key. Doubles as the account `id`. */
 export type MajikKeyFingerprint = string;
+
+export type ED25519PublicKey = string;
+export type MLKEM768PublicKey = string;
+export type MLDSA87PublicKey = string;
+export type BitcoinPublicKey = string;
 
 /**
  * Safe, serializable snapshot of a MajikKey — what `toJSON()` / `toString()` produce.
@@ -23,7 +27,7 @@ export type MajikKeyFingerprint = string;
  */
 export interface MajikKeyJSON {
   /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
-  id: string;
+  id: MajikKeyFingerprint;
   /** Human-readable, user-editable account name. */
   label: string;
   /** X25519 public key, base64. */
@@ -42,26 +46,26 @@ export interface MajikKeyJSON {
    */
   backup: string; // base64
   /** Account creation time, ISO 8601. */
-  timestamp: string; // ISO 8601
+  timestamp: ISODateString; // ISO 8601
   /** KDF used for every `encrypted*` field on this account: `1` = legacy PBKDF2 (read-only), `2` = Argon2id (current). Defaults to `1` if omitted. */
   kdfVersion?: number;
 
   /** ML-KEM-768 (FIPS-203) public key, base64. Post-quantum key encapsulation. */
-  mlKemPublicKey?: string;
+  mlKemPublicKey?: MLKEM768PublicKey;
   /** AES-256-GCM-encrypted ML-KEM-768 secret key, base64. */
   encryptedMlKemSecretKey?: string;
 
   /** Ed25519 public key, base64. Classical signing — same keypair the X25519 identity key is converted from. */
-  edPublicKey?: string;
+  edPublicKey?: ED25519PublicKey;
   /** AES-256-GCM-encrypted Ed25519 secret key, base64. */
   encryptedEdSecretKey?: string;
   /** ML-DSA-87 (FIPS-204) public key, base64. Post-quantum signing. */
-  mlDsaPublicKey?: string;
+  mlDsaPublicKey?: MLDSA87PublicKey;
   /** AES-256-GCM-encrypted ML-DSA-87 secret key, base64. */
   encryptedMlDsaSecretKey?: string;
 
   /** @experimental secp256k1 Bitcoin public key, base64. Domain-separated BIP-32/84 derivation by default — see `MajikKeyBitcoinNamespace`. */
-  btcPublicKey?: string;
+  btcPublicKey?: BitcoinPublicKey;
   /** @experimental AES-256-GCM-encrypted Bitcoin private key, base64. */
   encryptedBtcSecretKey?: string;
 
