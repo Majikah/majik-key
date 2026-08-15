@@ -1,10 +1,12 @@
+import { ED25519RawPublicKey } from "../../types";
+
 /**
  * @experimental Web3 / blockchain integrations are experimental. This
  * namespace's shape may change without a major version bump.
  */
 export interface MajikKeySolanaNamespace {
   /** 32-byte Solana/Ed25519 public key. */
-  readonly publicKey: Uint8Array;
+  readonly publicKey: ED25519RawPublicKey;
   /** 64-byte nacl-format secret key. Handle with the same care as any private key. */
   readonly secretKey: Uint8Array;
   /** Base58 Solana address — does not require @solana/kit. */

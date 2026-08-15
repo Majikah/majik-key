@@ -1,3 +1,5 @@
+import { BitcoinRawPublicKey } from "../../types";
+
 /**
  * @experimental By default this is Majik's DOMAIN-SEPARATED Bitcoin key
  * (derived via `MAJIK_BITCOIN_DOMAIN_PATH`) — deterministic and fully
@@ -9,7 +11,7 @@
  */
 export interface MajikKeyBitcoinNamespace {
   /** 33-byte compressed secp256k1 public key. */
-  readonly publicKey: Uint8Array;
+  readonly publicKey: BitcoinRawPublicKey;
   /** 32-byte secp256k1 private key. Handle with the same care as any private key. */
   readonly privateKey: Uint8Array;
   /** Native SegWit (bech32) address. Lazily loads @scure/btc-signer — throws if not installed. */

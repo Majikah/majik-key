@@ -31,13 +31,14 @@ import { hash } from "@stablelib/sha256";
 import { MAJIK_SOLANA_SEED } from "./constants";
 import { MajikKeyError } from "../../error";
 import { base58Encode } from "../utils";
+import { ED25519RawPublicKey } from "../../types";
 
 const ED25519_SECRET_KEY_LENGTH = 64;
 const ED25519_SEED_LENGTH = 32;
 
 export interface SolanaKeypairMaterial {
   /** 32-byte Ed25519 / Solana public key. */
-  publicKey: Uint8Array;
+  publicKey: ED25519RawPublicKey;
   /** 64-byte nacl-format secret key (32-byte seed || 32-byte public key). */
   secretKey: Uint8Array;
 }
@@ -92,7 +93,6 @@ export function solanaMaterialFromEd25519SecretKey(
     secretKey: edSecretKey.slice(),
   };
 }
-
 
 /**
  * Solana address for a given Solana/Ed25519 public key — just its base58

@@ -35,12 +35,13 @@ import { hash } from "@stablelib/sha256";
 import { base58Encode } from "../utils";
 import { MajikKeyError } from "../../error";
 import { randomBytes } from "@noble/hashes/utils.js";
+import { BitcoinRawPublicKey } from "../../types";
 
 export interface BitcoinKeypairMaterial {
   /** 32-byte secp256k1 private key. */
   privateKey: Uint8Array;
   /** 33-byte compressed secp256k1 public key. */
-  publicKey: Uint8Array;
+  publicKey: BitcoinRawPublicKey;
 }
 
 export interface BitcoinDerivationOptions {
