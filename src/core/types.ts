@@ -14,6 +14,15 @@ export type MLKEM768PublicKey = string;
 export type MLDSA87PublicKey = string;
 export type BitcoinPublicKey = string;
 
+export type ED25519RawPublicKey = Uint8Array;
+export type MLKEM768RawPublicKey = Uint8Array;
+export type MLDSA87RawPublicKey = Uint8Array;
+export type BitcoinRawPublicKey = Uint8Array;
+
+export interface X25519RawKey {
+  raw: Uint8Array;
+}
+
 /**
  * Safe, serializable snapshot of a MajikKey — what `toJSON()` / `toString()` produce.
  *

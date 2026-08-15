@@ -34,18 +34,22 @@ import {
 
 import {
   KDF_VERSION,
-  KEY_ALGO,
   MAJIK_MNEMONIC_SALT,
 } from "./core/crypto/constants";
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import type {
+  BitcoinRawPublicKey,
+  ED25519RawPublicKey,
   MajikKeyAddress,
   MajikKeyDangerousJSON,
   MajikKeyFingerprint,
   MajikKeyJSON,
   MajikKeyMetadata,
+  MLDSA87RawPublicKey,
+  MLKEM768RawPublicKey,
   MnemonicJSON,
+  X25519RawKey,
 } from "./core/types";
 import { MajikMessageIdentity } from "./core/database/system/identity";
 import { MajikUser } from "@thezelijah/majik-user";
@@ -87,13 +91,13 @@ const SALT_SIZE = 32;
  */
 export interface MajikKeyIdentity {
   /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
-  id: string;
-  /** X25519 public key — native `CryptoKey` where WebCrypto supports it, otherwise a raw-bytes wrapper. */
-  publicKey: { raw: Uint8Array };
+  id: MajikKeyFingerprint;
+  /** X25519 public key */
+  publicKey: X25519RawKey;
   /** SHA-256 fingerprint of `publicKey`. */
   fingerprint: MajikKeyFingerprint;
   /** X25519 private key, decrypted into memory. ⚠️ Live key material — do not log or serialize directly. */
-  privateKey: { raw: Uint8Array };
+  privateKey: X25519RawKey;
   /** AES-256-GCM-encrypted X25519 private key (IV + ciphertext), as stored at rest. */
   encryptedPrivateKey: ArrayBuffer;
   /** Random salt used to derive the passphrase-based encryption key. Base64. */
@@ -170,7 +174,7 @@ export interface SerializedIdentity {
  */
 export interface MajikKeyConstructorOptions {
   id: string;
-  publicKey: { raw: Uint8Array };
+  publicKey: X25519RawKey;
   publicKeyBase64: MajikKeyAddress;
   fingerprint: MajikKeyFingerprint;
   encryptedPrivateKey: ArrayBuffer;
@@ -182,18 +186,18 @@ export interface MajikKeyConstructorOptions {
   timestamp?: Date;
   /** Defaults to legacy PBKDF2 (`KDF_VERSION.PBKDF2`) if omitted — see the private constructor. */
   kdfVersion?: KDF_VERSION;
-  mlKemPublicKey: Uint8Array;
+  mlKemPublicKey: MLKEM768RawPublicKey;
   /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   mlKemSecretKey?: Uint8Array;
   encryptedMlKemSecretKey?: ArrayBuffer;
   encryptedMlKemSecretKeyBase64?: string;
   /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
-  privateKey?: { raw: Uint8Array };
+  privateKey?: X25519RawKey;
 
-  edPublicKey?: Uint8Array;
+  edPublicKey?: ED25519RawPublicKey;
   encryptedEdSecretKey?: ArrayBuffer;
   encryptedEdSecretKeyBase64?: string;
-  mlDsaPublicKey?: Uint8Array;
+  mlDsaPublicKey?: MLDSA87RawPublicKey;
   encryptedMlDsaSecretKey?: ArrayBuffer;
   encryptedMlDsaSecretKeyBase64?: string;
 
@@ -203,7 +207,7 @@ export interface MajikKeyConstructorOptions {
   mlDsaSecretKey?: Uint8Array;
 
   /** @experimental secp256k1 Bitcoin public key. */
-  btcPublicKey?: Uint8Array;
+  btcPublicKey?: BitcoinRawPublicKey;
   /** @experimental AES-256-GCM-encrypted Bitcoin private key. */
   encryptedBtcSecretKey?: ArrayBuffer;
   /** @experimental Base64 form of `encryptedBtcSecretKey`. */
@@ -333,7 +337,7 @@ export class MajikKey {
   // ── Getters ─────────────────────────────────────────────────────────────────
 
   /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
-  get id(): string {
+  get id(): MajikKeyFingerprint {
     return this._id;
   }
 
@@ -342,8 +346,8 @@ export class MajikKey {
     return this._fingerprint;
   }
 
-  /** X25519 public key — native `CryptoKey` where WebCrypto supports it, otherwise a raw-bytes wrapper. Always available, even when locked. */
-  get publicKey(): CryptoKey | { raw: Uint8Array } {
+  /** X25519 public key. Always available, even when locked. */
+  get publicKey(): X25519RawKey {
     return this._publicKey;
   }
 
@@ -398,7 +402,7 @@ export class MajikKey {
   }
 
   /** ML-KEM-768 (FIPS-203) public key. Post-quantum key encapsulation. Always available, even when locked. */
-  get mlKemPublicKey(): Uint8Array {
+  get mlKemPublicKey(): MLKEM768RawPublicKey {
     return this._mlKemPublicKey;
   }
 
@@ -422,7 +426,7 @@ export class MajikKey {
    * has no stored Bitcoin key material (e.g. it predates Web3 support and
    * hasn't been re-imported via `importFromMnemonicBackup()`).
    */
-  get btcPublicKey(): Uint8Array | undefined {
+  get btcPublicKey(): BitcoinRawPublicKey | undefined {
     return this._btcPublicKey;
   }
 
@@ -455,12 +459,12 @@ export class MajikKey {
   }
 
   /** Ed25519 public key. Classical signing — same keypair the X25519 identity key is converted from. Always available, even when locked. */
-  get edPublicKey(): Uint8Array | undefined {
+  get edPublicKey(): ED25519RawPublicKey | undefined {
     return this._edPublicKey;
   }
 
   /** ML-DSA-87 (FIPS-204) public key. Post-quantum signing. Always available, even when locked. */
-  get mlDsaPublicKey(): Uint8Array | undefined {
+  get mlDsaPublicKey(): MLDSA87RawPublicKey | undefined {
     return this._mlDsaPublicKey;
   }
 
@@ -1103,7 +1107,7 @@ export class MajikKey {
     }
   }
 
-  getPrivateKey(): CryptoKey | { raw: Uint8Array } {
+  getPrivateKey(): X25519RawKey {
     if (this.isLocked)
       throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
     return this._privateKey!;
