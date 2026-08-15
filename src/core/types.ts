@@ -3,11 +3,6 @@ import { MnemonicLanguage } from "./crypto/wordlist";
 /** ISO 8601 timestamp string, e.g. `"2026-07-11T00:00:00.000Z"`. */
 export type ISODateString = string;
 
-export type MajikMessageAccountID = string;
-
-export type MajikMessagePublicKey = string;
-
-export type MajikMessageChatID = string;
 
 /** Base64-encoded public key material. Safe to store, log, or transmit. */
 export type MajikKeyAddress = string;
