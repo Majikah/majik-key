@@ -11,19 +11,19 @@ import {
 import { concatUint8Arrays } from "../utils";
 import { hash } from "@stablelib/sha256";
 import { MAJIK_SIGNATURE_SEED } from "./constants";
+import type { ED25519RawPublicKey, MajikKeyFingerprint, MLDSA87RawPublicKey, MLKEM768RawPublicKey, X25519RawKey } from "../types";
 
 const secureFill = Uint8Array.prototype.fill;
 
 export interface EncryptionIdentity {
-  publicKey: { raw: Uint8Array }; // X25519 public key
-  privateKey: { raw: Uint8Array }; // X25519 private key
-  fingerprint: string; // SHA-256 of X25519 public key
-  mlKemPublicKey: Uint8Array; // ML-KEM-768 public key (1184 bytes)
+  publicKey: X25519RawKey; // X25519 public key
+  privateKey: X25519RawKey; // X25519 private key
+  fingerprint: MajikKeyFingerprint; // SHA-256 of X25519 public key
+  mlKemPublicKey: MLKEM768RawPublicKey; // ML-KEM-768 public key (1184 bytes)
   mlKemSecretKey?: Uint8Array; // ML-KEM-768 secret key (2400 bytes)
-  // ... existing fields ...
-  edPublicKey: Uint8Array; // Ed25519, 32 bytes — for signing
+  edPublicKey: ED25519RawPublicKey; // Ed25519, 32 bytes — for signing
   edSecretKey: Uint8Array; // Ed25519, 64 bytes — for signing
-  mlDsaPublicKey: Uint8Array; // ML-DSA-87, 2592 bytes
+  mlDsaPublicKey: MLDSA87RawPublicKey; // ML-DSA-87, 2592 bytes
   mlDsaSecretKey: Uint8Array; // ML-DSA-87, 4896 bytes
 }
 
@@ -129,7 +129,7 @@ export class EncryptionEngine {
    * Generates a SHA-256 fingerprint from a public key.
    */
   static async fingerprintFromPublicKey(
-    publicKey: CryptoKey | { raw: Uint8Array },
+    publicKey: CryptoKey | X25519RawKey,
   ): Promise<string> {
     // Accept both CryptoKey and raw wrappers; use stablelib sha256 via provider
     const anyKey: any = publicKey as any;
@@ -152,7 +152,7 @@ export class EncryptionEngine {
    * Validation Helpers
    * ================================ */
 
-  private static assertPublicKey(key: CryptoKey | { raw: Uint8Array }): void {
+  private static assertPublicKey(key: CryptoKey | X25519RawKey): void {
     const anyKey: any = key as any;
     if (!key) throw new CryptoError("Invalid public key");
     if (anyKey.raw instanceof Uint8Array) return; // raw wrapper
