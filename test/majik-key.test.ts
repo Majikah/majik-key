@@ -287,6 +287,144 @@ describe("MajikKey Class Unit Tests", () => {
     );
   });
 
+  // ── AUTO-LOCK OPERATION TESTS ─────────────────────────────────────────────
+  // These tests exercise MajikKey.withAutoLock() as a scoped secret-key
+  // operation helper. The key must already be unlocked; the helper never
+  // accepts a passphrase and never performs the unlock itself.
+  //
+  // The important security guarantee is that lock() runs in a `finally`
+  // block, so the key is locked both after successful operations and after
+  // operations that throw/reject.
+
+  describe("Auto-lock operation helper (.withAutoLock)", () => {
+    let autoLockKey: MajikKey;
+
+    beforeAll(async () => {
+      const mnemonic = await MajikKey.generateMnemonic(128, "en");
+      autoLockKey = await MajikKey.create(
+        mnemonic,
+        PASSPHRASE,
+        "Auto-lock Test Key",
+      );
+    }, CRYPTO_TIMEOUT);
+
+    it("should execute the operation and automatically lock the key afterward", async () => {
+      expect(autoLockKey.isUnlocked).toBe(true);
+
+      const result = await MajikKey.withAutoLock(autoLockKey, (key) => {
+        expect(key).toBe(autoLockKey);
+        expect(key.isUnlocked).toBe(true);
+
+        return key.getSolanaAddress();
+      });
+
+      expect(result).toBeTruthy();
+      expect(typeof result).toBe("string");
+      expect(autoLockKey.isLocked).toBe(true);
+      expect(autoLockKey.isUnlocked).toBe(false);
+
+      // Prove the private material was actually purged.
+      expect(() => autoLockKey.getPrivateKey()).toThrow(/MajikKey is locked/);
+    });
+
+    it(
+      "should support asynchronous operations and lock after they resolve",
+      async () => {
+        await autoLockKey.unlock(PASSPHRASE);
+
+        const result = await MajikKey.withAutoLock(autoLockKey, async (key) => {
+          expect(key.isUnlocked).toBe(true);
+
+          // Exercise a real async operation that requires secret material.
+          const secret = key.getEdSecretKey();
+
+          await Promise.resolve();
+
+          return secret.length;
+        });
+        expect(result).toBe(64);
+        expect(autoLockKey.isLocked).toBe(true);
+        expect(autoLockKey.isUnlocked).toBe(false);
+      },
+      CRYPTO_TIMEOUT,
+    );
+
+    it(
+      "should lock the key even when the operation throws",
+      async () => {
+        await autoLockKey.unlock(PASSPHRASE);
+
+        await expect(
+          MajikKey.withAutoLock(autoLockKey, () => {
+            expect(autoLockKey.isUnlocked).toBe(true);
+
+            throw new Error("operation failed");
+          }),
+        ).rejects.toThrow("operation failed");
+
+        expect(autoLockKey.isLocked).toBe(true);
+        expect(autoLockKey.isUnlocked).toBe(false);
+
+        expect(() => autoLockKey.getEdSecretKey()).toThrow(
+          /MajikKey is locked/,
+        );
+      },
+      CRYPTO_TIMEOUT,
+    );
+
+    it(
+      "should lock the key even when the asynchronous operation rejects",
+      async () => {
+        await autoLockKey.unlock(PASSPHRASE);
+
+        await expect(
+          MajikKey.withAutoLock(autoLockKey, async () => {
+            expect(autoLockKey.isUnlocked).toBe(true);
+
+            await Promise.resolve();
+            throw new Error("async operation failed");
+          }),
+        ).rejects.toThrow("async operation failed");
+
+        expect(autoLockKey.isLocked).toBe(true);
+        expect(autoLockKey.isUnlocked).toBe(false);
+      },
+      CRYPTO_TIMEOUT,
+    );
+
+    it("should reject a locked key instead of unlocking it automatically", async () => {
+      expect(autoLockKey.isLocked).toBe(true);
+
+      await expect(
+        MajikKey.withAutoLock(autoLockKey, (key) => key.getEdSecretKey()),
+      ).rejects.toThrow(
+        /MajikKey must be unlocked before calling withAutoLock/,
+      );
+
+      // The callback must never run when the precondition fails.
+      expect(autoLockKey.isLocked).toBe(true);
+    });
+
+    it(
+      "should reject a non-function operation",
+      async () => {
+        await autoLockKey.unlock(PASSPHRASE);
+
+        await expect(
+          MajikKey.withAutoLock(autoLockKey, null as any),
+        ).rejects.toThrow(/Operation must be a function/);
+
+        // Because validation happens before entering the try/finally scope,
+        // this is still unlocked here. This confirms the helper did not
+        // silently change state when given invalid input.
+        expect(autoLockKey.isUnlocked).toBe(true);
+
+        autoLockKey.lock();
+      },
+      CRYPTO_TIMEOUT,
+    );
+  });
+
   // ── SERIALIZATION TESTS ───────────────────────────────────────────────────
   describe("Serialization and Parsing", () => {
     it("should compile to a valid JSON primitive via .toJSON", () => {
