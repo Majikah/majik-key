@@ -32,10 +32,7 @@ import {
   base64ToUint8Array,
 } from "./core/utils";
 
-import {
-  KDF_VERSION,
-  MAJIK_MNEMONIC_SALT,
-} from "./core/crypto/constants";
+import { KDF_VERSION, MAJIK_MNEMONIC_SALT } from "./core/crypto/constants";
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import type {
@@ -1147,6 +1144,56 @@ export class MajikKey {
         "No ML-DSA secret key — re-import via importFromMnemonicBackup() for full migration.",
       );
     return this._mlDsaSecretKey;
+  }
+
+  /**
+   * Executes an operation against an already-unlocked MajikKey and
+   * automatically locks the key when the operation completes.
+   *
+   * The key is always locked after the operation, including when the
+   * operation throws or rejects.
+   *
+   * @param key - An already-unlocked MajikKey instance.
+   * @param operation - Synchronous or asynchronous operation to execute.
+   * @returns The result returned by the operation.
+   *
+   * @throws {MajikKeyError} If the key is locked.
+   * @throws {MajikKeyError} If `operation` is not a function.
+   *
+   * @example
+   * ```ts
+   * await key.unlock(passphrase);
+   *
+   * const signature = await MajikKey.withAutoLock(key, async (key) => {
+   *   return sign(key.getEdSecretKey(), message);
+   * });
+   *
+   * // key.isLocked === true
+   * ```
+   */
+  static async withAutoLock<T>(
+    key: MajikKey,
+    operation: (key: MajikKey) => T | Promise<T>,
+  ): Promise<T> {
+    if (!(key instanceof MajikKey)) {
+      throw new MajikKeyError("A valid MajikKey instance is required");
+    }
+
+    if (key.isLocked) {
+      throw new MajikKeyError(
+        "MajikKey must be unlocked before calling withAutoLock()",
+      );
+    }
+
+    if (typeof operation !== "function") {
+      throw new MajikKeyError("Operation must be a function");
+    }
+
+    try {
+      return await operation(key);
+    } finally {
+      key.lock();
+    }
   }
 
   // ── SERIALIZATION ────────────────────────────────────────────────────────────
