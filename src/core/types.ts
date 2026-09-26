@@ -156,4 +156,7 @@ export interface MnemonicJSON {
   phrase?: string;
 
   language?: MnemonicLanguage;
+
+  /** Backup format version this payload was written with. See BACKUP_FORMAT_VERSION. */
+  version?: number;
 }

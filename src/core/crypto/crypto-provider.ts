@@ -142,7 +142,7 @@ async function _argon2id(
     _wasmAvailable = await _probeWasm();
     if (!_wasmAvailable) {
       console.warn(
-        "[majikah/crypto] hash-wasm unavailable, using @noble/hashes argon2id fallback",
+        "[@majikah/majik-key/crypto] hash-wasm unavailable, using @noble/hashes argon2id fallback",
       );
     }
   }
@@ -155,7 +155,7 @@ async function _argon2id(
       // Flip flag so we stop trying for the rest of this session
       _wasmAvailable = false;
       console.warn(
-        "[majikah/majik-key/crypto] hash-wasm runtime failure, falling back to @noble/hashes",
+        "[@majikah/majik-key/crypto] hash-wasm runtime failure, falling back to @noble/hashes",
         err,
       );
     }

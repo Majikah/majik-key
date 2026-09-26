@@ -11,7 +11,11 @@ export default defineConfig({
     server: {
       deps: {
         // This tells Vitest to fix the missing extensions for this specific library on the fly
-        inline: [/@majikah\/majik-key/, /@majikah\/majik-contact/],
+        inline: [
+          /@majikah\/majik-key/,
+          /@majikah\/majik-contact/,
+          /@majikah\/majik-bytes/,
+        ],
       },
     },
   },
