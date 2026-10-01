@@ -19,7 +19,11 @@ import {
   IV_LENGTH,
 } from "./core/crypto/crypto-provider";
 import { EncryptionEngine } from "./core/crypto/encryption-engine";
-import { MajikContact, MajikContactMeta } from "@majikah/majik-contact";
+import {
+  MajikContact,
+  MajikContactData,
+  MajikContactMeta,
+} from "@majikah/majik-contact";
 import {
   arrayBufferToBase64,
   arrayToBase64,
@@ -240,7 +244,7 @@ export interface MajikKeyConstructorOptions {
  */
 export class MajikKey {
   private readonly _id: string;
-  private readonly _publicKey: { raw: Uint8Array };
+  private readonly _publicKey: X25519RawKey;
   private readonly _publicKeyBase64: string;
   private readonly _fingerprint: string;
   private readonly _backup: string;
@@ -258,7 +262,7 @@ export class MajikKey {
   private _encryptedMlKemSecretKey?: ArrayBuffer;
   private _encryptedMlKemSecretKeyBase64?: string;
 
-  private _privateKey?: { raw: Uint8Array };
+  private _privateKey?: X25519RawKey;
 
   private _edPublicKey?: Uint8Array;
   private _edSecretKey?: Uint8Array;
@@ -1263,23 +1267,34 @@ export class MajikKey {
    * Converts the MajikKey to a MajikContact.
    * You can pass a custom metadata type if needed, e.g., toContact<MyMeta>()
    */
+
   toContact<TMeta extends MajikContactMeta = MajikContactMeta>(
     initialMeta?: Partial<TMeta>,
-  ): MajikContact<TMeta> {
-    const mlKeyBase64 = arrayToBase64(this.mlKemPublicKey);
+  ): MajikContact<TMeta>;
 
-    // We construct the base metadata and merge with any provided initialMeta
-    const meta: Partial<TMeta> = {
-      label: this._label,
-      ...initialMeta,
-    } as Partial<TMeta>;
+  /** Build any MajikContact subclass by passing its constructor. */
+  toContact<
+    TMeta extends MajikContactMeta,
+    TContact extends MajikContact<TMeta>,
+  >(
+    ContactClass: new (data: MajikContactData<TMeta>) => TContact,
+    initialMeta?: Partial<TMeta>,
+  ): TContact;
 
-    return new MajikContact<TMeta>({
+  toContact(arg1?: unknown, arg2?: unknown): MajikContact<any> {
+    const ContactClass = (
+      typeof arg1 === "function" ? arg1 : MajikContact
+    ) as new (data: MajikContactData<any>) => MajikContact<any>;
+    const initialMeta = (typeof arg1 === "function" ? arg2 : arg1) as
+      | Partial<MajikContactMeta>
+      | undefined;
+
+    return new ContactClass({
       id: this._id,
       publicKey: this._publicKey,
       fingerprint: this._fingerprint,
-      meta: meta,
-      mlKey: mlKeyBase64,
+      meta: { label: this._label, ...initialMeta },
+      mlKey: arrayToBase64(this.mlKemPublicKey),
       edPublicKeyBase64: this._edPublicKey
         ? arrayToBase64(this._edPublicKey)
         : undefined,
