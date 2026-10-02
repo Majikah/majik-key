@@ -1477,6 +1477,7 @@ export class MajikKey {
           ? arrayBufferToBase64(identity.encryptedBtcSecretKey)
           : undefined,
         btcSecretKey: identity.btcSecretKey,
+        mnemonicLanguage: mnemonicLanguage || "en",
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
