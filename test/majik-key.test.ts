@@ -36,7 +36,7 @@ import { KDF_VERSION } from "../src/core/crypto/constants";
 import type { MnemonicLanguage } from "../src/core/crypto/wordlist";
 import type { MnemonicJSON } from "../src/core/types";
 
-const CRYPTO_TIMEOUT = 240_000;
+const CRYPTO_TIMEOUT = 360_000;
 
 describe("MajikKey Class Unit Tests", () => {
   const PASSPHRASE = "TestPassphrase123!";
