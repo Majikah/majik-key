@@ -845,6 +845,337 @@ export class MajikKey {
     return this;
   }
 
+  /**
+   * PHASE 2a — derive the vault key ONCE per operation.
+   *
+   * Why: today every encrypted blob (X25519, ML-KEM, Ed25519, ML-DSA, BTC) calls
+   * deriveKeyFromPassphraseArgon2() separately with the same passphrase + salt,
+   * i.e. 5 Argon2id runs per create()/unlock() even though the comments say
+   * "one Argon2id computation". Cost grows linearly with every key added to the
+   * registry, so this must land BEFORE we add more algorithms.
+   *
+   * Compatibility: the on-disk format is UNCHANGED. Each blob is still
+   * IV(12) || AES-256-GCM ciphertext under Argon2id(passphrase, salt) (or PBKDF2
+   * for legacy kdfVersion 1 X25519 blobs). Old JSON decrypts identically; new
+   * JSON is readable by old versions.
+   *
+   * HOW TO APPLY (all inside class MajikKey, MajikKey.ts):
+   *   1. ADD  the three helpers below (_deriveVaultKey, _seal, _open).
+   *   2. REPLACE _deriveAndEncryptFromMnemonic, unlock, updatePassphrase, migrate
+   *      with the versions below.
+   *   3. DELETE _encryptPrivateKey, _encryptMlKemSecretKey, _encryptSigningKey,
+   *      _decryptPrivateKey, _decryptMlKemSecretKey, _decryptSigningKey
+   *      (nothing else references them — grep first).
+   *   4. Run test/test-vectors.test.ts. It must stay green; unlock() should drop
+   *      from roughly 9–10 s to roughly 2 s under the noble fallback.
+   *
+   * Also fixed on the way (behavioral, strictly safer):
+   *   - unlock() is atomic: it no longer leaves the key half-unlocked
+   *     (isUnlocked === true with some secrets missing) if a later blob fails.
+   *   - updatePassphrase()/migrate() decrypt EVERYTHING first and only then
+   *     commit, so a failure can no longer leave a new salt paired with blobs
+   *     still encrypted under the old one.
+   *   - migrate() now re-encrypts every present blob (previously only X25519).
+   */
+
+  // ── 1. NEW HELPERS ──────────────────────────────────────────────────────────
+
+  /** One KDF run. kdfVersion 1 = legacy PBKDF2 (X25519 blob of old accounts only). */
+  private static async _deriveVaultKey(
+    passphrase: string,
+    salt: Uint8Array,
+    kdfVersion: KDF_VERSION = KDF_VERSION.ARGON2ID,
+  ): Promise<Uint8Array> {
+    return kdfVersion === KDF_VERSION.ARGON2ID
+      ? deriveKeyFromPassphraseArgon2(passphrase, salt)
+      : deriveKeyFromPassphrase(passphrase, salt);
+  }
+
+  /** IV(12) || AES-256-GCM(ciphertext+tag). Fresh random IV per blob. */
+  private static _seal(aesKey: Uint8Array, plaintext: Uint8Array): ArrayBuffer {
+    const iv = generateRandomBytes(IV_LENGTH);
+    const ciphertext = aesGcmEncrypt(aesKey, iv, plaintext);
+    return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
+  }
+
+  private static _open(
+    aesKey: Uint8Array,
+    blob: ArrayBuffer,
+    what: string,
+  ): Uint8Array {
+    const full = new Uint8Array(blob);
+    const plain = aesGcmDecrypt(
+      aesKey,
+      full.slice(0, IV_LENGTH),
+      full.slice(IV_LENGTH),
+    );
+    if (!plain)
+      throw new MajikKeyError(
+        `Failed to decrypt ${what} — incorrect passphrase or corrupted data`,
+      );
+    return plain;
+  }
+
+  // ── 2a. REPLACE _deriveAndEncryptFromMnemonic ───────────────────────────────
+
+  private static async _deriveAndEncryptFromMnemonic(
+    mnemonic: string,
+    passphrase: string,
+    options?: { deriveBitcoin?: boolean },
+  ): Promise<MajikKeyDerivedIdentity> {
+    const deriveBitcoin = options?.deriveBitcoin ?? true;
+    const encIdentity =
+      await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
+
+    // Single salt AND single Argon2id run for every blob below.
+    const salt = generateRandomBytes(SALT_SIZE);
+    const aesKey = await MajikKey._deriveVaultKey(passphrase, salt);
+
+    try {
+      const xRaw = new Uint8Array((encIdentity.privateKey as any).raw);
+      const mlKemSecretKey = encIdentity.mlKemSecretKey!;
+      const edSecretKey = encIdentity.edSecretKey;
+      const mlDsaSecretKey = encIdentity.mlDsaSecretKey;
+
+      const encryptedPrivateKey = MajikKey._seal(aesKey, xRaw);
+      const encryptedMlKemSecretKey = MajikKey._seal(aesKey, mlKemSecretKey);
+      const encryptedEdSecretKey = MajikKey._seal(aesKey, edSecretKey);
+      const encryptedMlDsaSecretKey = MajikKey._seal(aesKey, mlDsaSecretKey);
+
+      // @experimental Bitcoin — unchanged derivation (domain-separated BIP-32/84).
+      let btcPublicKey: Uint8Array | undefined;
+      let btcSecretKey: Uint8Array | undefined;
+      let encryptedBtcSecretKey: ArrayBuffer | undefined;
+      if (deriveBitcoin) {
+        const rawSeed = await mnemonicToSeed(mnemonic);
+        const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
+        btcPublicKey = btcMaterial.publicKey;
+        btcSecretKey = btcMaterial.privateKey;
+        encryptedBtcSecretKey = MajikKey._seal(aesKey, btcMaterial.privateKey);
+      }
+
+      secureFill.call(xRaw, 0);
+
+      return {
+        id: encIdentity.fingerprint,
+        publicKey: encIdentity.publicKey,
+        fingerprint: encIdentity.fingerprint,
+        privateKey: encIdentity.privateKey,
+        encryptedPrivateKey,
+        salt: arrayToBase64(salt),
+        kdfVersion: KDF_VERSION.ARGON2ID,
+        mlKemPublicKey: encIdentity.mlKemPublicKey,
+        mlKemSecretKey,
+        encryptedMlKemSecretKey,
+        edPublicKey: encIdentity.edPublicKey,
+        edSecretKey,
+        encryptedEdSecretKey,
+        mlDsaPublicKey: encIdentity.mlDsaPublicKey,
+        mlDsaSecretKey,
+        encryptedMlDsaSecretKey,
+        btcPublicKey,
+        btcSecretKey,
+        encryptedBtcSecretKey,
+      };
+    } finally {
+      secureFill.call(aesKey, 0);
+    }
+  }
+
+  // ── 2b. REPLACE unlock ──────────────────────────────────────────────────────
+
+  async unlock(passphrase: string): Promise<this> {
+    try {
+      if (this.isUnlocked)
+        throw new MajikKeyError("MajikKey is already unlocked");
+      MajikKeyValidator.validatePassphrase(passphrase);
+
+      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
+
+      // Key for the X25519 blob: PBKDF2 (legacy) or Argon2id, per kdfVersion.
+      const primaryKey = await MajikKey._deriveVaultKey(
+        passphrase,
+        salt,
+        this._kdfVersion,
+      );
+      // Every other blob was only ever written by Argon2id code. Reuse the same
+      // key when the account is already Argon2id; derive once more only for the
+      // (theoretical) legacy-KDF-with-extra-blobs case.
+      let argonKey: Uint8Array | undefined =
+        this._kdfVersion === KDF_VERSION.ARGON2ID ? primaryKey : undefined;
+
+      try {
+        const priv = MajikKey._open(
+          primaryKey,
+          this._encryptedPrivateKey,
+          "private key",
+        );
+
+        const hasExtras =
+          this._encryptedMlKemSecretKey ||
+          this._encryptedEdSecretKey ||
+          this._encryptedMlDsaSecretKey ||
+          this._encryptedBtcSecretKey;
+        if (hasExtras && !argonKey) {
+          argonKey = await MajikKey._deriveVaultKey(
+            passphrase,
+            salt,
+            KDF_VERSION.ARGON2ID,
+          );
+        }
+
+        // Decrypt into locals first; assign only if EVERYTHING succeeded.
+        const mlKem = this._encryptedMlKemSecretKey
+          ? MajikKey._open(
+              argonKey!,
+              this._encryptedMlKemSecretKey,
+              "ML-KEM secret key",
+            )
+          : undefined;
+        const ed = this._encryptedEdSecretKey
+          ? MajikKey._open(
+              argonKey!,
+              this._encryptedEdSecretKey,
+              "Ed25519 secret key",
+            )
+          : undefined;
+        const mlDsa = this._encryptedMlDsaSecretKey
+          ? MajikKey._open(
+              argonKey!,
+              this._encryptedMlDsaSecretKey,
+              "ML-DSA secret key",
+            )
+          : undefined;
+        const btc = this._encryptedBtcSecretKey
+          ? MajikKey._open(
+              argonKey!,
+              this._encryptedBtcSecretKey,
+              "Bitcoin secret key",
+            )
+          : undefined;
+
+        this._privateKey = { type: "private", raw: priv } as any;
+        this._mlKemSecretKey = mlKem;
+        this._edSecretKey = ed;
+        this._mlDsaSecretKey = mlDsa;
+        this._btcSecretKey = btc;
+        return this;
+      } finally {
+        secureFill.call(primaryKey, 0);
+        if (argonKey && argonKey !== primaryKey) secureFill.call(argonKey, 0);
+        secureFill.call(salt, 0);
+      }
+    } catch (err) {
+      if (err instanceof MajikKeyError) throw err;
+      throw new MajikKeyError(
+        "Failed to unlock MajikKey — incorrect passphrase or corrupted data",
+        err,
+      );
+    }
+  }
+
+  // ── 2c. REPLACE updatePassphrase + migrate (shared private core) ────────────
+
+  /**
+   * Decrypt every blob with (currentPassphrase, current salt/kdf), re-encrypt
+   * with (newPassphrase, fresh salt, Argon2id), then commit atomically.
+   * Does not require the key to be unlocked and does not touch in-memory
+   * plaintext secrets.
+   */
+  private async _reencryptAll(
+    currentPassphrase: string,
+    newPassphrase: string,
+  ): Promise<void> {
+    const oldSalt = new Uint8Array(base64ToArrayBuffer(this._salt));
+    const newSalt = generateRandomBytes(SALT_SIZE);
+
+    // Table of the optional blobs so Phase 2c can replace it with a `keys` loop.
+    const slots: Array<[enc: string, b64: string, label: string]> = [
+      [
+        "_encryptedMlKemSecretKey",
+        "_encryptedMlKemSecretKeyBase64",
+        "ML-KEM secret key",
+      ],
+      [
+        "_encryptedEdSecretKey",
+        "_encryptedEdSecretKeyBase64",
+        "Ed25519 secret key",
+      ],
+      [
+        "_encryptedMlDsaSecretKey",
+        "_encryptedMlDsaSecretKeyBase64",
+        "ML-DSA secret key",
+      ],
+      [
+        "_encryptedBtcSecretKey",
+        "_encryptedBtcSecretKeyBase64",
+        "Bitcoin secret key",
+      ],
+    ];
+    const self = this as any;
+
+    let oldPrimary: Uint8Array | undefined;
+    let oldArgon: Uint8Array | undefined;
+    let newKey: Uint8Array | undefined;
+    const plains: Uint8Array[] = [];
+    try {
+      oldPrimary = await MajikKey._deriveVaultKey(
+        currentPassphrase,
+        oldSalt,
+        this._kdfVersion,
+      );
+      oldArgon =
+        this._kdfVersion === KDF_VERSION.ARGON2ID ? oldPrimary : undefined;
+
+      // 1) decrypt everything
+      const priv = MajikKey._open(
+        oldPrimary,
+        this._encryptedPrivateKey,
+        "private key",
+      );
+      plains.push(priv);
+      const decrypted: Array<[string, string, Uint8Array]> = [];
+      for (const [enc, b64, label] of slots) {
+        if (!self[enc]) continue;
+        oldArgon ??= await MajikKey._deriveVaultKey(
+          currentPassphrase,
+          oldSalt,
+          KDF_VERSION.ARGON2ID,
+        );
+        const p = MajikKey._open(oldArgon, self[enc], label);
+        plains.push(p);
+        decrypted.push([enc, b64, p]);
+      }
+
+      // 2) re-encrypt everything under ONE new Argon2id key
+      newKey = await MajikKey._deriveVaultKey(
+        newPassphrase,
+        newSalt,
+        KDF_VERSION.ARGON2ID,
+      );
+      const newPriv = MajikKey._seal(newKey, priv);
+      const resealed = decrypted.map(
+        ([enc, b64, p]) => [enc, b64, MajikKey._seal(newKey!, p)] as const,
+      );
+
+      // 3) commit (nothing above mutated state, so a failure leaves the key intact)
+      this._encryptedPrivateKey = newPriv;
+      this._encryptedPrivateKeyBase64 = arrayBufferToBase64(newPriv);
+      for (const [enc, b64, blob] of resealed) {
+        self[enc] = blob;
+        self[b64] = arrayBufferToBase64(blob);
+      }
+      this._salt = arrayToBase64(newSalt);
+      this._kdfVersion = KDF_VERSION.ARGON2ID;
+    } finally {
+      for (const p of plains) secureFill.call(p, 0);
+      if (oldPrimary) secureFill.call(oldPrimary, 0);
+      if (oldArgon && oldArgon !== oldPrimary) secureFill.call(oldArgon, 0);
+      if (newKey) secureFill.call(newKey, 0);
+      secureFill.call(oldSalt, 0);
+    }
+  }
+
   async updatePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -856,147 +1187,28 @@ export class MajikKey {
       "Current passphrase",
     );
     MajikKeyValidator.validatePassphrase(newPassphrase, "New passphrase");
-    const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-    const privateKeyBuffer = await MajikKey._decryptPrivateKey(
-      this._encryptedPrivateKey,
-      currentPassphrase,
-      salt,
-      this._kdfVersion,
-    );
-
     try {
-      let mlKemSecretKeyBytes: Uint8Array | undefined;
-      if (this._encryptedMlKemSecretKey) {
-        mlKemSecretKeyBytes = await MajikKey._decryptMlKemSecretKey(
-          this._encryptedMlKemSecretKey,
-          currentPassphrase,
-          salt,
-        );
-      }
-
-      const newSalt = generateRandomBytes(SALT_SIZE);
-      const { blob: newEncryptedPrivateKey } =
-        await MajikKey._encryptPrivateKey(
-          privateKeyBuffer,
-          newPassphrase,
-          newSalt,
-        );
-      this._encryptedPrivateKey = newEncryptedPrivateKey;
-      this._encryptedPrivateKeyBase64 = arrayBufferToBase64(
-        newEncryptedPrivateKey,
-      );
-      this._salt = arrayToBase64(newSalt);
-      this._kdfVersion = KDF_VERSION.ARGON2ID;
-
-      if (mlKemSecretKeyBytes) {
-        const encMlKem = await MajikKey._encryptMlKemSecretKey(
-          mlKemSecretKeyBytes,
-          newPassphrase,
-          newSalt,
-        );
-        this._encryptedMlKemSecretKey = encMlKem;
-        this._encryptedMlKemSecretKeyBase64 = arrayBufferToBase64(encMlKem);
-        if (this._mlKemSecretKey) secureFill.call(this._mlKemSecretKey, 0);
-        this._mlKemSecretKey = mlKemSecretKeyBytes;
-      }
-
-      if (this._encryptedEdSecretKey) {
-        const edSecretKeyBytes = await MajikKey._decryptSigningKey(
-          this._encryptedEdSecretKey,
-          currentPassphrase,
-          salt,
-        );
-        const encEd = await MajikKey._encryptSigningKey(
-          edSecretKeyBytes,
-          newPassphrase,
-          newSalt,
-        );
-        this._encryptedEdSecretKey = encEd;
-        this._encryptedEdSecretKeyBase64 = arrayBufferToBase64(encEd);
-        if (this._edSecretKey) secureFill.call(this._edSecretKey, 0);
-        this._edSecretKey = edSecretKeyBytes;
-      }
-
-      if (this._encryptedMlDsaSecretKey) {
-        const mlDsaSecretKeyBytes = await MajikKey._decryptSigningKey(
-          this._encryptedMlDsaSecretKey,
-          currentPassphrase,
-          salt,
-        );
-        const encDsa = await MajikKey._encryptSigningKey(
-          mlDsaSecretKeyBytes,
-          newPassphrase,
-          newSalt,
-        );
-        this._encryptedMlDsaSecretKey = encDsa;
-        this._encryptedMlDsaSecretKeyBase64 = arrayBufferToBase64(encDsa);
-        if (this._mlDsaSecretKey) secureFill.call(this._mlDsaSecretKey, 0);
-        this._mlDsaSecretKey = mlDsaSecretKeyBytes;
-      }
-
-      if (this._encryptedBtcSecretKey) {
-        const btcSecretKeyBytes = await MajikKey._decryptSigningKey(
-          this._encryptedBtcSecretKey,
-          currentPassphrase,
-          salt,
-        );
-        const encBtc = await MajikKey._encryptSigningKey(
-          btcSecretKeyBytes,
-          newPassphrase,
-          newSalt,
-        );
-        this._encryptedBtcSecretKey = encBtc;
-        this._encryptedBtcSecretKeyBase64 = arrayBufferToBase64(encBtc);
-        if (this._btcSecretKey) secureFill.call(this._btcSecretKey, 0);
-        this._btcSecretKey = btcSecretKeyBytes;
-      }
-
+      await this._reencryptAll(currentPassphrase, newPassphrase);
       return this;
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError("Failed to update passphrase", err);
-    } finally {
-      // Clear the temporary unencrypted buffer
-      secureFill.call(new Uint8Array(privateKeyBuffer), 0);
-      secureFill.call(salt, 0);
     }
   }
 
   /**
    * Migrate KDF from PBKDF2 to Argon2id without changing passphrase.
-   * NOTE: Does not add ML-KEM keys — use importFromMnemonicBackup() for full upgrade.
+   * NOTE: Does not add new key types — use importFromMnemonicBackup() / addKeys().
    */
   async migrate(passphrase: string): Promise<this> {
     MajikKeyValidator.validatePassphrase(passphrase);
     if (this._kdfVersion === KDF_VERSION.ARGON2ID) return this;
-
-    const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-    let privateKeyBuffer: ArrayBuffer | undefined;
     try {
-      privateKeyBuffer = await MajikKey._decryptPrivateKey(
-        this._encryptedPrivateKey,
-        passphrase,
-        salt,
-        KDF_VERSION.PBKDF2,
-      );
-      const newSalt = generateRandomBytes(SALT_SIZE);
-      const { blob } = await MajikKey._encryptPrivateKey(
-        privateKeyBuffer,
-        passphrase,
-        newSalt,
-      );
-      this._encryptedPrivateKey = blob;
-      this._encryptedPrivateKeyBase64 = arrayBufferToBase64(blob);
-      this._salt = arrayToBase64(newSalt);
-      this._kdfVersion = KDF_VERSION.ARGON2ID;
+      await this._reencryptAll(passphrase, passphrase);
       return this;
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
       throw new MajikKeyError("Failed to migrate MajikKey to Argon2id", err);
-    } finally {
-      if (privateKeyBuffer)
-        secureFill.call(new Uint8Array(privateKeyBuffer), 0);
-      secureFill.call(salt, 0);
     }
   }
 
@@ -1028,69 +1240,6 @@ export class MajikKey {
     this._btcSecretKey = undefined;
     this._solanaKeypairMaterial = undefined;
     return this;
-  }
-
-  async unlock(passphrase: string): Promise<this> {
-    try {
-      if (this.isUnlocked)
-        throw new MajikKeyError("MajikKey is already unlocked");
-      MajikKeyValidator.validatePassphrase(passphrase);
-
-      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-      const privateKeyBuffer = await MajikKey._decryptPrivateKey(
-        this._encryptedPrivateKey,
-        passphrase,
-        salt,
-        this._kdfVersion,
-      );
-
-      const privateKey = {
-        type: "private",
-        raw: new Uint8Array(privateKeyBuffer),
-      };
-
-      this._privateKey = privateKey;
-
-      if (this._encryptedMlKemSecretKey) {
-        this._mlKemSecretKey = await MajikKey._decryptMlKemSecretKey(
-          this._encryptedMlKemSecretKey,
-          passphrase,
-          salt,
-        );
-      }
-
-      if (this._encryptedEdSecretKey) {
-        this._edSecretKey = await MajikKey._decryptSigningKey(
-          this._encryptedEdSecretKey,
-          passphrase,
-          salt,
-        );
-      }
-
-      if (this._encryptedMlDsaSecretKey) {
-        this._mlDsaSecretKey = await MajikKey._decryptSigningKey(
-          this._encryptedMlDsaSecretKey,
-          passphrase,
-          salt,
-        );
-      }
-
-      if (this._encryptedBtcSecretKey) {
-        this._btcSecretKey = await MajikKey._decryptSigningKey(
-          this._encryptedBtcSecretKey,
-          passphrase,
-          salt,
-        );
-      }
-
-      return this;
-    } catch (err) {
-      if (err instanceof MajikKeyError) throw err;
-      throw new MajikKeyError(
-        "Failed to unlock MajikKey — incorrect passphrase or corrupted data",
-        err,
-      );
-    }
   }
 
   async verify(passphrase: string): Promise<boolean> {
@@ -1495,99 +1644,6 @@ export class MajikKey {
     return mod.wordlist;
   }
 
-  /**
-   * @param mnemonic - BIP-39 mnemonic to derive the full key set from.
-   * @param passphrase - Passphrase used to derive the Argon2id encryption key shared by every private key produced here.
-   * @param options.deriveBitcoin - @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true`.
-   */
-  private static async _deriveAndEncryptFromMnemonic(
-    mnemonic: string,
-    passphrase: string,
-    options?: { deriveBitcoin?: boolean },
-  ): Promise<MajikKeyDerivedIdentity> {
-    const deriveBitcoin = options?.deriveBitcoin ?? true;
-
-    const encIdentity =
-      await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
-
-    const anyPriv: any = encIdentity.privateKey;
-
-    const exportedXPrivate = anyPriv.raw.buffer.slice(
-      anyPriv.raw.byteOffset,
-      anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
-    );
-
-    // Single salt — one Argon2id derivation unlocks every key below
-    const salt = generateRandomBytes(SALT_SIZE);
-    const { blob: encryptedPrivateKey } = await MajikKey._encryptPrivateKey(
-      exportedXPrivate,
-      passphrase,
-      salt,
-    );
-
-    const mlKemSecretKey = encIdentity.mlKemSecretKey!;
-    const encryptedMlKemSecretKey = await MajikKey._encryptMlKemSecretKey(
-      mlKemSecretKey,
-      passphrase,
-      salt,
-    );
-
-    const edSecretKey = encIdentity.edSecretKey;
-    const encryptedEdSecretKey = await MajikKey._encryptSigningKey(
-      edSecretKey,
-      passphrase,
-      salt,
-    );
-
-    const mlDsaSecretKey = encIdentity.mlDsaSecretKey;
-    const encryptedMlDsaSecretKey = await MajikKey._encryptSigningKey(
-      mlDsaSecretKey,
-      passphrase,
-      salt,
-    );
-
-    // @experimental Bitcoin — real BIP-32/BIP-84 off the raw 64-byte BIP-39
-    // seed, using Majik's domain-separated path by default. Same salt,
-    // different IV, same pattern as ML-KEM/Ed25519/ML-DSA above. Skipped
-    // entirely when `deriveBitcoin` is false — no derivation cost paid,
-    // no key material generated.
-    let btcPublicKey: Uint8Array | undefined;
-    let btcSecretKey: Uint8Array | undefined;
-    let encryptedBtcSecretKey: ArrayBuffer | undefined;
-    if (deriveBitcoin) {
-      const rawSeed = await mnemonicToSeed(mnemonic);
-      const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
-      btcPublicKey = btcMaterial.publicKey;
-      btcSecretKey = btcMaterial.privateKey;
-      encryptedBtcSecretKey = await MajikKey._encryptSigningKey(
-        btcMaterial.privateKey,
-        passphrase,
-        salt,
-      );
-    }
-
-    return {
-      id: encIdentity.fingerprint,
-      publicKey: encIdentity.publicKey,
-      fingerprint: encIdentity.fingerprint,
-      privateKey: encIdentity.privateKey,
-      encryptedPrivateKey,
-      salt: arrayToBase64(salt),
-      kdfVersion: KDF_VERSION.ARGON2ID,
-      mlKemPublicKey: encIdentity.mlKemPublicKey,
-      mlKemSecretKey,
-      encryptedMlKemSecretKey,
-      edPublicKey: encIdentity.edPublicKey,
-      edSecretKey,
-      encryptedEdSecretKey,
-      mlDsaPublicKey: encIdentity.mlDsaPublicKey,
-      mlDsaSecretKey,
-      encryptedMlDsaSecretKey,
-      btcPublicKey,
-      btcSecretKey,
-      encryptedBtcSecretKey,
-    };
-  }
   // ── PRIVATE: Encryption/Decryption ───────────────────────────────────────────
 
   private static async _encryptPrivateKey(

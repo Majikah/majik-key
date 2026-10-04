@@ -50,7 +50,7 @@ export interface SolanaKeypairMaterial {
  * message-signing Ed25519 key, but fully deterministic from it (and
  * therefore ultimately from the mnemonic).
  *
- *   seed' = SHA256(edSecretKey[0..32] || "MajikMessageSolanaSeed")
+ *   seed' = SHA256(edSecretKey[0..32] || "MajikKeySolanaSeed")
  */
 export function deriveSolanaKeypairFromEdSecretKey(
   edSecretKey: Uint8Array,

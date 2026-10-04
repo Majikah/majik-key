@@ -53,7 +53,10 @@
     "test:web3:solana": "vitest run test/majik-key-solana.test.ts",
     "test:web3": "vitest run test/majik-key-bitcoin.test.ts test/majik-key-solana.test.ts",
     "test:core": "vitest run test/majik-key.test.ts",
-    "test:backup": "vitest run test/backup/majik-key-backup.test.ts"
+    "test:backup": "vitest run test/backup/majik-key-backup.test.ts",
+    "test:keystore": "vitest run test/keys/key-store.test.ts",
+    "test:keyimpls": "vitest run test/keys/key-impls.test.ts",
+    "test:vectors": "vitest run test/test-vectors.test.ts"
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.1.1",

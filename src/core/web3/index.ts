@@ -1,3 +1,5 @@
+// src/core/web3/index.ts
+
 export * from "./bitcoin/bitcoin";
 export * from "./solana/solana";
 
