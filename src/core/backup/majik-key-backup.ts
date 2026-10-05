@@ -156,9 +156,8 @@ export class MajikKeyBackup {
     }
 
     if (pngResult && jsonResult) {
-      const idsMatch = pngResult.data.id === jsonResult.data.id;
-      const seedsMatch =
-        pngResult.data.seed.join(" ") === jsonResult.data.seed.join(" ");
+      const idsMatch = pngResult.id === jsonResult.id;
+      const seedsMatch = pngResult.seed.join(" ") === jsonResult.seed.join(" ");
 
       if (!idsMatch || !seedsMatch) {
         throw new BackupIntegrityMismatchError(
@@ -241,7 +240,6 @@ export class MajikKeyBackup {
     );
   }
 }
-
 
 // Freeze static methods (e.g., MajikKey.create, MajikKey.fromJSON)
 Object.freeze(MajikKeyBackup);

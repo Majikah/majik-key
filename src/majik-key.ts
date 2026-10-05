@@ -33,8 +33,8 @@ import {
 import {
   MajikContactData,
   MajikContactMeta,
-} from "@majikah/majik-contact/dist/types.js";
-import { MajikContact } from "@majikah/majik-contact/dist/contacts/majik-contact.js";
+} from "@majikah/majik-contact";
+import { MajikContact } from "@majikah/majik-contact";
 import {
   arrayToBase64,
   base64ToArrayBuffer,
@@ -67,7 +67,7 @@ import type {
   X25519RawKey,
 } from "./core/types.js";
 import { MajikMessageIdentity } from "./core/database/system/identity.js";
-import { MajikUser } from "@thezelijah/majik-user/dist/core/majik-user.js";
+import { MajikUser } from "@thezelijah/majik-user";
 import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist.js";
 
 import {

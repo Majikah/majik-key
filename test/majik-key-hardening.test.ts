@@ -19,13 +19,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { MajikKey, KeyId, CORE_KEYS } from "../src/majik-key";
-import { KDF_VERSION } from "../src/core/crypto/constants";
 import { KEY_ALGORITHMS } from "../src/core/keys/registry";
 import {
   arrayToBase64,
   base64ToUint8Array,
-  base64ToUtf8,
-  utf8ToBase64,
 } from "../src/core/utils";
 import type { MnemonicLanguage } from "../src/core/crypto/wordlist";
 

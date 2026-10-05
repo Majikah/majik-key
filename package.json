@@ -71,7 +71,7 @@
     "test:vectors": "vitest run test/test-vectors.test.ts"
   },
   "dependencies": {
-    "@majikah/majik-contact": "^0.1.1",
+    "@majikah/majik-contact": "^0.2.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "@noble/post-quantum": "^0.7.1",
@@ -83,7 +83,7 @@
     "@stablelib/pbkdf2": "^2.0.1",
     "@stablelib/sha256": "^2.0.1",
     "@stablelib/x25519": "^2.0.1",
-    "@thezelijah/majik-user": "^1.0.10",
+    "@thezelijah/majik-user": "^1.1.0",
     "ed2curve": "^0.3.0",
     "hash-wasm": "^4.12.0"
   },
