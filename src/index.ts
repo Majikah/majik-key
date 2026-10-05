@@ -16,3 +16,7 @@ export * from "./core/keys/key-store.js";
 export * from "./core/keys/key-impls.js";
 export * from "./core/keys/keypair-handle.js";
 export * from "./core/keys/registry.js";
+
+export * from "./core/crypto/wordlist.js";
+export * from "./core/crypto/constants.js";
+export * from "./core/crypto/crypto-provider.js";

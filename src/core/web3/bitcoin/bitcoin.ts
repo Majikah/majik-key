@@ -31,7 +31,7 @@ import {
   MAJIK_BITCOIN_STANDARD_PATH,
   MAJIK_BITCOIN_DOMAIN_PATH,
 } from "./constants.js";
-import { hash } from "@stablelib/sha256/sha256.js";
+import { hash } from "@stablelib/sha256";
 import { base58Encode } from "../utils.js";
 import { MajikKeyError } from "../../error.js";
 import { randomBytes } from "@noble/hashes/utils.js";

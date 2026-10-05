@@ -26,8 +26,8 @@
  *      key secures two different protocols. Opt-in only.
  */
 
-import * as ed25519 from "@stablelib/ed25519/ed25519.js";
-import { hash } from "@stablelib/sha256/sha256.js";
+import * as ed25519 from "@stablelib/ed25519";
+import { hash } from "@stablelib/sha256";
 import { MAJIK_SOLANA_SEED } from "./constants.js";
 import { MajikKeyError } from "../../error.js";
 import { base58Encode } from "../utils.js";

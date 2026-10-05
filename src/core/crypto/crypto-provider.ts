@@ -1,11 +1,11 @@
 // crypto-provider.ts from @majikah/majik-key
-import * as ed25519 from "@stablelib/ed25519/ed25519.js";
+import * as ed25519 from "@stablelib/ed25519";
 import ed2curve from "ed2curve";
-import { AES } from "@stablelib/aes/aes.js";
-import { GCM } from "@stablelib/gcm/gcm.js";
-import { deriveKey } from "@stablelib/pbkdf2/pbkdf2.js";
-import { hash, SHA256 } from "@stablelib/sha256/sha256.js";
-import * as x25519 from "@stablelib/x25519/x25519.js";
+import { AES } from "@stablelib/aes";
+import { GCM } from "@stablelib/gcm";
+import { deriveKey } from "@stablelib/pbkdf2";
+import { hash, SHA256 } from "@stablelib/sha256";
+import * as x25519 from "@stablelib/x25519";
 import { arrayToBase64 } from "../utils.js";
 import { argon2id as nobleArgon2id } from "@noble/hashes/argon2.js";
 import { ARGON2_PARAMS } from "./constants.js";
