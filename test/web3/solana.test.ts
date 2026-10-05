@@ -21,8 +21,8 @@
 // timed beforeAll() setup rather than re-deriving a key per test.
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { MajikKey } from "../src/majik-key";
-import { base58Encode } from "../src/core/web3/utils";
+import { MajikKey } from "../../src/majik-key";
+import { base58Encode } from "../../src/core/web3/utils";
 
 const CRYPTO_TIMEOUT = 60_000;
 

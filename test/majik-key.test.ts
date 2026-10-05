@@ -1,34 +1,4 @@
 // majik-key.test.ts
-//
-// These tests exercise MajikKey against REAL implementations wherever
-// possible: real @scure/bip39 mnemonic generation/validation (with the
-// actual wordlists for each supported language), real Argon2id key
-// derivation, real AES-256-GCM encryption (via @stablelib), real
-// ML-KEM-768 keygen, real secp256k1/Ed25519 derivation, and Node's
-// built-in WebCrypto. Nothing about the cryptographic round-trip is
-// faked, so these tests catch real bugs a mocked suite would miss
-// entirely — e.g. a wrong passphrase failing to decrypt, backup-import
-// failing for the wrong mnemonic, or a non-English wordlist producing a
-// mnemonic that silently fails downstream derivation.
-//
-// Trade-off: real Argon2id is deliberately slow (that's the point of a
-// password KDF), and in Node, hash-wasm is gated off by the library's own
-// `typeof window === "undefined"` check in crypto-provider.ts — so this
-// suite always exercises the pure-JS @noble/hashes Argon2id fallback, never
-// the WASM-accelerated path. Each derivation may take anywhere from a few
-// hundred ms to a couple seconds depending on ARGON2_PARAMS, so tests that
-// touch unlock/create/updatePassphrase/import are given generous timeouts.
-//
-// NOTE: migrate() (PBKDF2 -> Argon2id migration for legacy v1 accounts) is
-// deliberately NOT covered here — that code path is slated to be
-// discontinued, so it isn't worth the setup cost of hand-constructing a
-// PBKDF2-encrypted legacy key just to exercise a method on its way out.
-//
-// Nothing here is mocked. If your test environment can't resolve
-// @majikah/majik-contact or @thezelijah/majik-user (real deps of
-// majik-key.ts), that'll surface as an import error — but neither is
-// actually invoked by this suite (toContact()/toMajikMessageIdentity()
-// aren't exercised here), so it's safe to leave them real.
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { MajikKey } from "../src/majik-key";

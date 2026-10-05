@@ -49,7 +49,9 @@ function def(
 }
 
 const SLH = (id: KeyId, variant: string) =>
-  def(id, "signature", `FIPS 205 (${variant})`, hkdf(id));
+  def(id, "signature", `FIPS 205 (${variant})`, hkdf(id), {
+    implemented: true,
+  });
 
 export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
   Object.freeze({
@@ -79,6 +81,7 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       "kem",
       "FIPS 203",
       hkdf(KeyId.ML_KEM_512),
+      { implemented: true },
     ),
     [KeyId.ML_KEM_768]: def(
       KeyId.ML_KEM_768,
@@ -92,6 +95,7 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       "kem",
       "FIPS 203",
       hkdf(KeyId.ML_KEM_1024),
+      { implemented: true },
     ),
 
     [KeyId.HQC_128]: def(
@@ -125,12 +129,14 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       "signature",
       "FIPS 204",
       hkdf(KeyId.ML_DSA_44),
+      { implemented: true },
     ),
     [KeyId.ML_DSA_65]: def(
       KeyId.ML_DSA_65,
       "signature",
       "FIPS 204",
       hkdf(KeyId.ML_DSA_65),
+      { implemented: true },
     ),
     [KeyId.ML_DSA_87]: def(
       KeyId.ML_DSA_87,
@@ -160,6 +166,7 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       hkdf(KeyId.FALCON_512),
       {
         status: "experimental",
+        implemented: true,
         note: "Round 3 Falcon, NOT FIPS 206. FN-DSA is expected to be incompatible; it will get its own ids.",
       },
     ),
@@ -168,7 +175,7 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       "signature",
       "Falcon (NIST PQC Round 3)",
       hkdf(KeyId.FALCON_1024),
-      { status: "experimental", note: "See pq:falcon-512." },
+      { status: "experimental", implemented: true, note: "See pq:falcon-512." },
     ),
     [KeyId.FN_DSA_512]: def(
       KeyId.FN_DSA_512,
@@ -214,12 +221,18 @@ export const KEY_ALGORITHMS: Readonly<Record<KeyId, KeyAlgorithmDefinition>> =
       },
       { implemented: true },
     ),
-    [KeyId.ETH]: def(KeyId.ETH, "wallet", "BIP-32 / BIP-44 (SLIP-44 coin 60)", {
-      scheme: "bip32",
-      version: 1,
-      path: "m/44'/60'/0'/0/0",
-      note: "Standard path: MetaMask-compatible",
-    }),
+    [KeyId.ETH]: def(
+      KeyId.ETH,
+      "wallet",
+      "BIP-32 / BIP-44 (SLIP-44 coin 60)",
+      {
+        scheme: "bip32",
+        version: 1,
+        path: "m/44'/60'/0'/0/0",
+        note: "Standard path: MetaMask-compatible",
+      },
+      { implemented: true },
+    ),
     [KeyId.SOL]: def(
       KeyId.SOL,
       "wallet",

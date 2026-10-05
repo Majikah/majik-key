@@ -169,3 +169,33 @@ describe("KeyStore", () => {
     );
   });
 });
+
+describe("KeyStore: peek / attach / export", () => {
+  it("peekSecretKey is non-throwing and respects lock state", () => {
+    const s = fresh(rnd());
+    expect(s.peekSecretKey(KeyId.ED25519)).toBeDefined();
+    expect(s.peekSecretKey("pq:nope")).toBeUndefined();
+    s.lock();
+    expect(s.peekSecretKey(KeyId.ED25519)).toBeUndefined();
+  });
+  it("attachSecrets unlocks a public-only store; exportSecrets returns them", () => {
+    const a = fresh(rnd());
+    const secrets = new Map(
+      [...a.exportSecrets()].map(([k, v]) => [k, v.slice()]),
+    );
+    const b = KeyStore.fromEntries(a.toEntries());
+    b.attachSecrets(secrets);
+    expect(b.isUnlocked).toBe(true);
+    expect(sha(b.getSecretKey(KeyId.ML_DSA_87))).toBe(
+      V[KeyId.ML_DSA_87].secretKeySha256,
+    );
+    expect([...b.exportSecrets().keys()].sort()).toEqual(
+      [...secrets.keys()].sort(),
+    );
+    expect(() =>
+      b.attachSecrets(new Map([["pq:nope", new Uint8Array(1)]])),
+    ).toThrow(/unknown key/);
+    b.lock();
+    expect(() => b.exportSecrets()).toThrow(/locked/);
+  });
+});

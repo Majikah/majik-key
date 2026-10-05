@@ -71,10 +71,6 @@ describe("legacy-v1 derivation is frozen", () => {
   }, 60_000);
 });
 
-describe("web3:eth standard path (not implemented yet — pins the target)", () => {
-  it.todo(`address for m/44'/60'/0'/0/0 must equal ${V[KeyId.ETH].address}`);
-});
-
 describe("resolveRequestedKeys", () => {
   it("defaults to the core four", () => {
     expect(resolveRequestedKeys()).toEqual([

@@ -67,7 +67,7 @@ describe("registry implementations reproduce legacy-v1 vectors", () => {
     );
   });
   it("throws for ids with no implementation yet", () => {
-    expect(() => deriveKeys(seed(), [KeyId.ML_KEM_1024])).toThrow(
+    expect(() => deriveKeys(seed(), [KeyId.HQC_128])).toThrow(
       /No derivation implementation/,
     );
   });

@@ -13,8 +13,28 @@
 import * as ed25519 from "@stablelib/ed25519";
 import ed2curve from "ed2curve";
 import { hash } from "@stablelib/sha256";
-import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
-import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
+import {
+  ml_kem512,
+  ml_kem768,
+  ml_kem1024,
+} from "@noble/post-quantum/ml-kem.js";
+import { ml_dsa44, ml_dsa65, ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
+import {
+  slh_dsa_sha2_128s,
+  slh_dsa_sha2_128f,
+  slh_dsa_sha2_192s,
+  slh_dsa_sha2_192f,
+  slh_dsa_sha2_256s,
+  slh_dsa_sha2_256f,
+  slh_dsa_shake_128s,
+  slh_dsa_shake_128f,
+  slh_dsa_shake_192s,
+  slh_dsa_shake_192f,
+  slh_dsa_shake_256s,
+  slh_dsa_shake_256f,
+} from "@noble/post-quantum/slh-dsa.js";
+import { falcon512, falcon1024 } from "@noble/post-quantum/falcon.js";
+import { deriveSeedHkdf } from "./hkdf-recipe";
 import { HDKey } from "@scure/bip32";
 import { MajikKeyError } from "../error";
 import { KeyId } from "./key-id";
@@ -31,6 +51,8 @@ export interface KeyImpl {
 // ── frozen legacy-v1 recipe constants (do not "tidy" these) ──
 const LEGACY_DSA_DOMAIN = "MajikSignatureSeedDSA";
 const LEGACY_BTC_PATH = "m/84'/1971'/0'/0/0";
+// Standard Ethereum path (SLIP-44 coin 60): MetaMask / Ledger / Trezor compatible.
+const ETH_STANDARD_PATH = "m/44'/60'/0'/0/0";
 
 function assertSeed(seed64: Uint8Array) {
   if (seed64.length !== 64)
@@ -106,6 +128,93 @@ const btcImpl: KeyImpl = {
   },
 };
 
+const ethImpl: KeyImpl = {
+  id: KeyId.ETH,
+  derive(seed64) {
+    assertSeed(seed64);
+    const child = HDKey.fromMasterSeed(seed64).derive(ETH_STANDARD_PATH);
+    if (!child.privateKey || !child.publicKey)
+      throw new MajikKeyError("Failed to derive Ethereum keypair from seed");
+    return {
+      publicKey: child.publicKey.slice(),
+      secretKey: child.privateKey.slice(),
+    }; // 33 / 32 bytes
+  },
+};
+
+// ── hkdf-sha512-v1 recipe (phase 4+) ─────────────────────────────────────────
+// `seedLength` is FROZEN here on purpose (not read from the library): if a
+// future noble release changed an algorithm's seed size, derivation would
+// silently change. The guard below turns that into a loud error instead.
+interface Keygen {
+  lengths: { seed?: number };
+  keygen(seed: Uint8Array): { publicKey: Uint8Array; secretKey: Uint8Array };
+}
+function hkdfImpl(id: KeyId, algo: Keygen, seedLength: number): KeyImpl {
+  return {
+    id,
+    derive(seed64) {
+      assertSeed(seed64);
+      if (algo.lengths.seed !== seedLength)
+        throw new MajikKeyError(
+          `${id}: library seed length is ${algo.lengths.seed}, recipe expects ${seedLength}. Refusing to derive.`,
+        );
+      const seed = deriveSeedHkdf(seed64, id, seedLength);
+      try {
+        return algo.keygen(seed);
+      } finally {
+        seed.fill(0);
+      }
+    },
+  };
+}
+
+const HKDF_IMPLS: KeyImpl[] = [
+  hkdfImpl(KeyId.ML_KEM_512, ml_kem512 as unknown as Keygen, 64),
+  hkdfImpl(KeyId.ML_KEM_1024, ml_kem1024 as unknown as Keygen, 64),
+  hkdfImpl(KeyId.ML_DSA_44, ml_dsa44 as unknown as Keygen, 32),
+  hkdfImpl(KeyId.ML_DSA_65, ml_dsa65 as unknown as Keygen, 32),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_128S, slh_dsa_sha2_128s as unknown as Keygen, 48),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_128F, slh_dsa_sha2_128f as unknown as Keygen, 48),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_192S, slh_dsa_sha2_192s as unknown as Keygen, 72),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_192F, slh_dsa_sha2_192f as unknown as Keygen, 72),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_256S, slh_dsa_sha2_256s as unknown as Keygen, 96),
+  hkdfImpl(KeyId.SLH_DSA_SHA2_256F, slh_dsa_sha2_256f as unknown as Keygen, 96),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_128S,
+    slh_dsa_shake_128s as unknown as Keygen,
+    48,
+  ),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_128F,
+    slh_dsa_shake_128f as unknown as Keygen,
+    48,
+  ),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_192S,
+    slh_dsa_shake_192s as unknown as Keygen,
+    72,
+  ),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_192F,
+    slh_dsa_shake_192f as unknown as Keygen,
+    72,
+  ),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_256S,
+    slh_dsa_shake_256s as unknown as Keygen,
+    96,
+  ),
+  hkdfImpl(
+    KeyId.SLH_DSA_SHAKE_256F,
+    slh_dsa_shake_256f as unknown as Keygen,
+    96,
+  ),
+  // Falcon Round 3 (NOT FIPS 206) — experimental; ids are pq:falcon-*, not pq:fn-dsa-*
+  hkdfImpl(KeyId.FALCON_512, falcon512 as unknown as Keygen, 48),
+  hkdfImpl(KeyId.FALCON_1024, falcon1024 as unknown as Keygen, 48),
+];
+
 export const KEY_IMPLS: Readonly<Partial<Record<KeyId, KeyImpl>>> =
   Object.freeze({
     [KeyId.X25519]: x25519Impl,
@@ -113,6 +222,8 @@ export const KEY_IMPLS: Readonly<Partial<Record<KeyId, KeyImpl>>> =
     [KeyId.ML_KEM_768]: mlKem768Impl,
     [KeyId.ML_DSA_87]: mlDsa87Impl,
     [KeyId.BTC]: btcImpl,
+    [KeyId.ETH]: ethImpl,
+    ...Object.fromEntries(HKDF_IMPLS.map((i) => [i.id, i])),
   });
 
 /** Derive the requested STORED keys from one BIP-39 seed. Caller zeroizes the seed. */

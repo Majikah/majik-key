@@ -1,16 +1,8 @@
 // encryption-engine.ts from @majikah/majik-key
 import { mnemonicToSeedSync } from "@scure/bip39";
-import * as ed25519 from "@stablelib/ed25519";
-import ed2curve from "ed2curve";
-import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
-
-import {
-  deriveMlKemKeypairFromSeed,
-  fingerprintFromPublicRaw,
-} from "./crypto-provider";
-import { concatUint8Arrays } from "../utils";
-import { hash } from "@stablelib/sha256";
-import { MAJIK_SIGNATURE_SEED } from "./constants";
+import { fingerprintFromPublicRaw } from "./crypto-provider";
+import { deriveKeys } from "../keys/key-impls";
+import { KeyId } from "../keys/key-id";
 import type { ED25519RawPublicKey, MajikKeyFingerprint, MLDSA87RawPublicKey, MLKEM768RawPublicKey, X25519RawKey } from "../types";
 
 const secureFill = Uint8Array.prototype.fill;
@@ -32,29 +24,15 @@ export interface EncryptionIdentity {
  * ----------------
  * Core cryptographic engine.
  */
-
 export class EncryptionEngine {
-  /* ================================
-   * Identity
-   * ================================ */
-
   /**
-   * Derive a complete identity from a BIP-39 mnemonic.
+   * Derive the core identity (X25519, Ed25519, ML-KEM-768, ML-DSA-87) from a
+   * BIP-39 mnemonic.
    *
-   * Seed derivation:
-   *   mnemonicToSeedSync(mnemonic) → 64-byte BIP-39 seed
-   *
-   * X25519 derivation (unchanged from before):
-   *   seed[0..32] → Ed25519 keypair via generateKeyPairFromSeed
-   *              → X25519 via ed2curve conversion
-   *
-   * ML-KEM-768 derivation (new):
-   *   seed[0..64] → ml_kem768.keygen(seed)
-   *              → { publicKey: 1184 bytes, secretKey: 2400 bytes }
-   *
-   * The noble library accepts the full 64-byte BIP-39 seed directly.
-   * Internally it uses seed[0..32] for the lattice key matrix and
-   * seed[32..64] for the implicit rejection parameter `z`.
+   * Since 0.8 this DELEGATES to the key registry (core/keys/key-impls.ts),
+   * which is the single source of truth for every derivation recipe. Output is
+   * byte-for-byte identical to the previous implementation (pinned by
+   * vectors/legacy-v1.vectors.json).
    */
   static async deriveIdentityFromMnemonic(
     mnemonic: string,
@@ -62,62 +40,34 @@ export class EncryptionEngine {
     if (typeof mnemonic !== "string" || mnemonic.trim().length === 0) {
       throw new CryptoError("Mnemonic must be a non-empty string");
     }
-    // Step 1: BIP-39 seed → 64 bytes
-    const seed = mnemonicToSeedSync(mnemonic); // returns Buffer (Node) or Uint8Array
-    const seed64 = new Uint8Array(seed); // normalize to Uint8Array
-
-    // Step 3: ML-KEM-768 keypair from FULL 64-byte seed (new)
-    // ml_kem768.keygen() accepts a 64-byte seed directly.
-    // seed[0..32] → lattice key matrix expansion (K-PKE keygen)
-    // seed[32..64] → implicit rejection parameter z (stored in secretKey)
-    const mlKemKeypair = deriveMlKemKeypairFromSeed(seed64);
-
-    const mlDsaSeedInput = concatUint8Arrays(
-      seed64,
-      new TextEncoder().encode(MAJIK_SIGNATURE_SEED),
-    );
-    const mlDsaSeed = hash(mlDsaSeedInput);
-
-    // Step 2: X25519 identity from first 32 bytes (existing path)
-    const seed32 = seed64.subarray(0, 32);
+    const seed64 = new Uint8Array(mnemonicToSeedSync(mnemonic));
     try {
-      const ed = ed25519.generateKeyPairFromSeed(seed32);
-      const skCurve = ed2curve.convertSecretKey(ed.secretKey);
-      const pkCurve = ed2curve.convertPublicKey(ed.publicKey);
+      const k = deriveKeys(seed64, [
+        KeyId.X25519,
+        KeyId.ED25519,
+        KeyId.ML_KEM_768,
+        KeyId.ML_DSA_87,
+      ]);
+      const x = k.get(KeyId.X25519)!;
+      const ed = k.get(KeyId.ED25519)!;
+      const kem = k.get(KeyId.ML_KEM_768)!;
+      const dsa = k.get(KeyId.ML_DSA_87)!;
 
-      if (!skCurve || !pkCurve) {
-        throw new CryptoError(
-          "Failed to convert derived Ed25519 keys to Curve25519",
-        );
-      }
-
-      const pkCurveBytes = new Uint8Array(pkCurve as Uint8Array);
-      const skCurveBytes = new Uint8Array(skCurve as Uint8Array);
-
-      const publicKey = { type: "public", raw: pkCurveBytes } as any;
-      const privateKey = { type: "private", raw: skCurveBytes } as any;
-      const fingerprint = fingerprintFromPublicRaw(pkCurveBytes);
-
-      const mlDsaKeypair = ml_dsa87.keygen(mlDsaSeed);
       return {
-        publicKey,
-        privateKey,
-        fingerprint,
-        mlKemPublicKey: mlKemKeypair.publicKey, // 1184 bytes
-        mlKemSecretKey: mlKemKeypair.secretKey, // 2400 bytes
+        publicKey: { type: "public", raw: x.publicKey } as any,
+        privateKey: { type: "private", raw: x.secretKey } as any,
+        fingerprint: fingerprintFromPublicRaw(x.publicKey),
+        mlKemPublicKey: kem.publicKey, // 1184 bytes
+        mlKemSecretKey: kem.secretKey, // 2400 bytes
         edPublicKey: ed.publicKey, // 32 bytes
         edSecretKey: ed.secretKey, // 64 bytes
-        mlDsaPublicKey: mlDsaKeypair.publicKey, // 2592 bytes
-        mlDsaSecretKey: mlDsaKeypair.secretKey, // 4896 bytes
+        mlDsaPublicKey: dsa.publicKey, // 2592 bytes
+        mlDsaSecretKey: dsa.secretKey, // 4896 bytes
       };
     } catch (err) {
       throw new CryptoError("Failed to derive identity from mnemonic", err);
     } finally {
       secureFill.call(seed64, 0);
-      secureFill.call(seed32, 0);
-      secureFill.call(mlDsaSeedInput, 0);
-      secureFill.call(mlDsaSeed, 0);
-      if (seed instanceof Uint8Array) secureFill.call(seed, 0);
     }
   }
 
@@ -131,20 +81,15 @@ export class EncryptionEngine {
   static async fingerprintFromPublicKey(
     publicKey: CryptoKey | X25519RawKey,
   ): Promise<string> {
-    // Accept both CryptoKey and raw wrappers; use stablelib sha256 via provider
     const anyKey: any = publicKey as any;
     let rawBytes: Uint8Array;
     if (anyKey && anyKey.raw instanceof Uint8Array) {
       rawBytes = anyKey.raw;
     } else {
       this.assertPublicKey(publicKey);
-      const exported = await crypto.subtle.exportKey(
-        "raw",
-        publicKey as CryptoKey,
-      );
+      const exported = await crypto.subtle.exportKey("raw", publicKey as CryptoKey);
       rawBytes = new Uint8Array(exported);
     }
-
     return fingerprintFromPublicRaw(rawBytes);
   }
 

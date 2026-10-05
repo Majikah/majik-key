@@ -2,6 +2,17 @@
  * MajikKey.ts
  * Seed phrase account library for the Majikah ecosystem.
  *
+ * v0.8 — key REGISTRY. Every account stores a set of keypairs in a KeyStore,
+ * addressed by namespaced id (see core/keys/key-id.ts). The core four
+ * (classic:x25519, classic:ed25519, pq:ml-kem-768, pq:ml-dsa-87) are always
+ * present on new accounts; anything else is opt-in via `keys` / `addKeys()`.
+ *
+ * The pre-registry per-algorithm getters still work and are marked
+ * @deprecated: they are thin wrappers over the registry accessors.
+ *
+ * Derivation (all deterministic from the BIP-39 mnemonic) lives in
+ * core/keys/key-impls.ts. Frozen "legacy-v1" recipes are pinned by
+ * vectors/legacy-v1.vectors.json.
  */
 
 import {
@@ -15,10 +26,10 @@ import {
   deriveKeyFromPassphraseArgon2,
   deriveKeyFromMnemonicArgon2,
   deriveKeyFromPassphrase,
+  fingerprintFromPublicRaw,
   generateRandomBytes,
   IV_LENGTH,
 } from "./core/crypto/crypto-provider";
-import { EncryptionEngine } from "./core/crypto/encryption-engine";
 import {
   MajikContact,
   MajikContactData,
@@ -36,7 +47,12 @@ import {
   base64ToUint8Array,
 } from "./core/utils";
 
-import { KDF_VERSION, MAJIK_MNEMONIC_SALT } from "./core/crypto/constants";
+import {
+  KDF_VERSION,
+  LEGACY_MAJIK_MNEMONIC_SALT,
+  BACKUP_SALT_WRITE_VERSION,
+  backupSaltFor,
+} from "./core/crypto/constants";
 import { MajikKeyValidator } from "./core/validator";
 import { MajikKeyError } from "./core/error";
 import type {
@@ -71,108 +87,77 @@ import {
   solanaMaterialFromEd25519SecretKey,
   toSolanaAddress,
   toSolanaKeyPairSigner,
+  EthereumKeypairMaterial,
+  ethereumAddressFromPublicKey,
+  signEthereumHash,
+  signEthereumMessage,
+  toEthereumPrivateKeyHex,
 } from "./core/web3";
+
+import { CORE_KEYS, KeyFamily, KeyId } from "./core/keys/key-id";
+import {
+  KEY_ALGORITHMS,
+  enableableKeyIds,
+  getAlgorithm,
+  knownKeyIds,
+  resolveRequestedKeys,
+} from "./core/keys/registry";
+import { deriveKeys } from "./core/keys/key-impls";
+import { KeyStore, KeySlot } from "./core/keys/key-store";
+import { KeyInfo, MajikKeypair } from "./core/keys/keypair-handle";
+
+export { KeyId, KeyFamily, CORE_KEYS } from "./core/keys/key-id";
+export { MajikKeypair } from "./core/keys/keypair-handle";
+export type { KeyInfo } from "./core/keys/keypair-handle";
 
 const secureFill = Uint8Array.prototype.fill;
 
 const SALT_SIZE = 32;
+const KEYS_VERSION = 1;
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 /**
- * In-memory identity bundle for an *unlocked* MajikKey — the raw CryptoKey/
- * Uint8Array material, not the encrypted-at-rest form. This is what
- * `toKeyIdentity()` returns, and what backup export starts from.
- *
- * `mlKemPublicKey`/`mlKemSecretKey` are required here because every account
- * (even ones mid-migration) is expected to carry ML-KEM material by the time
- * this shape is used. `ed*`, `mlDsa*`, and `btc*` are optional because
- * accounts imported before those key types existed may not have them yet —
- * check `hasSigningKeys` / `hasBitcoin` on the `MajikKey` instance before
- * relying on them.
+ * In-memory identity bundle for an *unlocked* MajikKey. Returned by
+ * `toKeyIdentity()`. Kept for backward compatibility; prefer the registry
+ * accessors (`getKeypair()`, `getPublicKey()`, `getPrivateKey(id)`).
  */
 export interface MajikKeyIdentity {
-  /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
   id: MajikKeyFingerprint;
-  /** X25519 public key */
   publicKey: X25519RawKey;
-  /** SHA-256 fingerprint of `publicKey`. */
   fingerprint: MajikKeyFingerprint;
-  /** X25519 private key, decrypted into memory. ⚠️ Live key material — do not log or serialize directly. */
   privateKey: X25519RawKey;
-  /** AES-256-GCM-encrypted X25519 private key (IV + ciphertext), as stored at rest. */
   encryptedPrivateKey: ArrayBuffer;
-  /** Random salt used to derive the passphrase-based encryption key. Base64. */
   salt: string;
-  /** KDF used to encrypt the keys on this identity: `1` = legacy PBKDF2, `2` = Argon2id. */
   kdfVersion: KDF_VERSION;
-  /** ML-KEM-768 (FIPS-203) public key. Post-quantum key encapsulation. */
   mlKemPublicKey: Uint8Array;
-  /** ML-KEM-768 secret key, decrypted into memory. ⚠️ Live key material. */
   mlKemSecretKey?: Uint8Array;
-
-  /** Ed25519 public key. Classical signing — same keypair the X25519 identity key is converted from. */
   edPublicKey?: Uint8Array;
-  /** Ed25519 secret key, decrypted into memory. ⚠️ Live key material. */
   edSecretKey?: Uint8Array;
-  /** ML-DSA-87 (FIPS-204) public key. Post-quantum signing. */
   mlDsaPublicKey?: Uint8Array;
-  /** ML-DSA-87 secret key, decrypted into memory. ⚠️ Live key material. */
   mlDsaSecretKey?: Uint8Array;
-
-  /** @experimental secp256k1 Bitcoin public key. Domain-separated BIP-32/84 derivation by default. */
+  /** @experimental */
   btcPublicKey?: Uint8Array;
-  /** @experimental Bitcoin private key, decrypted into memory. ⚠️ Live key material. */
+  /** @experimental */
   btcSecretKey?: Uint8Array;
 }
 
-/**
- * `MajikKeyIdentity` immediately after fresh derivation from a mnemonic —
- * i.e. what `create()` and `importFromMnemonicBackup()` produce internally,
- * before the result is wrapped into a `MajikKey` instance.
- *
- * Unlike the base `MajikKeyIdentity`, every `encrypted*` field here is
- * required: a fresh derivation always re-derives and re-encrypts the full
- * key set (ML-KEM, Ed25519, ML-DSA, and Bitcoin) in one pass, so there's no
- * "partially migrated" state at this point in the flow.
- */
+/** @deprecated Pre-registry shape. No longer produced; kept so existing type imports keep compiling. */
 export type MajikKeyDerivedIdentity = MajikKeyIdentity & {
-  /** AES-256-GCM-encrypted ML-KEM-768 secret key, freshly re-encrypted. */
   encryptedMlKemSecretKey: ArrayBuffer;
-  /** AES-256-GCM-encrypted Ed25519 secret key, freshly re-encrypted. */
   encryptedEdSecretKey: ArrayBuffer;
-  /** AES-256-GCM-encrypted ML-DSA-87 secret key, freshly re-encrypted. */
   encryptedMlDsaSecretKey: ArrayBuffer;
-  /** @experimental AES-256-GCM-encrypted Bitcoin secret key, freshly re-encrypted. */
   encryptedBtcSecretKey?: ArrayBuffer;
 };
 
-/**
- * Minimal identity export — just enough to identify the account and, if
- * present, re-derive access to it. Lighter than `MajikKeyJSON`: no ML-KEM,
- * Ed25519, ML-DSA, or Bitcoin fields at all. Produced by
- * `toSerializedIdentity()` (unlocked keys only).
- */
 export interface SerializedIdentity {
   id: string;
-  /** X25519 public key, base64. */
   publicKey: MajikKeyAddress;
   fingerprint: MajikKeyFingerprint;
-  /** AES-256-GCM-encrypted X25519 private key, base64. Omitted in some contexts — check before use. */
   encryptedPrivateKey?: string;
-  /** Base64 salt paired with `encryptedPrivateKey`. Omitted in some contexts — check before use. */
   salt?: string;
 }
 
-/**
- * Internal constructor payload for `MajikKey` — every static factory
- * (`create()`, `fromJSON()`, `fromDangerousJSON()`, `importFromMnemonicBackup()`,
- * etc.) builds one of these and passes it to the private constructor.
- *
- * You won't normally build this by hand; it's exported mainly for type
- * inference around the factory methods. Fields mirror `MajikKeyJSON` plus
- * the live (decrypted) counterparts where a factory is constructing an
- * already-unlocked instance.
- */
+/** @deprecated Pre-registry constructor payload. The constructor now takes a KeyStore. */
 export interface MajikKeyConstructorOptions {
   id: string;
   publicKey: X25519RawKey;
@@ -181,66 +166,69 @@ export interface MajikKeyConstructorOptions {
   encryptedPrivateKey: ArrayBuffer;
   encryptedPrivateKeyBase64: string;
   salt: string;
-  /** Encrypted mnemonic-verification blob — see `MajikKeyJSON.backup`. */
   backup: string;
   label?: string;
   timestamp?: Date;
-  /** Defaults to legacy PBKDF2 (`KDF_VERSION.PBKDF2`) if omitted — see the private constructor. */
   kdfVersion?: KDF_VERSION;
   mlKemPublicKey: MLKEM768RawPublicKey;
-  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   mlKemSecretKey?: Uint8Array;
   encryptedMlKemSecretKey?: ArrayBuffer;
   encryptedMlKemSecretKeyBase64?: string;
-  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   privateKey?: X25519RawKey;
-
   edPublicKey?: ED25519RawPublicKey;
   encryptedEdSecretKey?: ArrayBuffer;
   encryptedEdSecretKeyBase64?: string;
   mlDsaPublicKey?: MLDSA87RawPublicKey;
   encryptedMlDsaSecretKey?: ArrayBuffer;
   encryptedMlDsaSecretKeyBase64?: string;
-
-  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   edSecretKey?: Uint8Array;
-  /** Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   mlDsaSecretKey?: Uint8Array;
-
-  /** @experimental secp256k1 Bitcoin public key. */
   btcPublicKey?: BitcoinRawPublicKey;
-  /** @experimental AES-256-GCM-encrypted Bitcoin private key. */
   encryptedBtcSecretKey?: ArrayBuffer;
-  /** @experimental Base64 form of `encryptedBtcSecretKey`. */
   encryptedBtcSecretKeyBase64?: string;
-  /** @experimental Present only when constructing an already-unlocked instance. ⚠️ Live key material. */
   btcSecretKey?: Uint8Array;
-
   mnemonicLanguage?: MnemonicLanguage;
+}
+
+/** Options for create(), fromMnemonicJSON() and importFromMnemonicBackup(). */
+export interface MajikKeyCreateOptions {
+  mnemonicLanguage?: MnemonicLanguage;
+  /**
+   * Extra keypairs to create ON TOP of the core four (always included).
+   * Defaults to none. e.g. `keys: [KeyId.BTC]`.
+   */
+  keys?: KeyId[];
+  /** @deprecated Use `keys: [KeyId.BTC]`. `true` adds `web3:btc`; omitted/false no longer derives it. */
+  deriveBitcoin?: boolean;
+}
+
+export interface MajikKeyToJSONOptions {
+  /**
+   * Also write the pre-registry flat fields (`encryptedMlKemSecretKey`, …)
+   * so older library versions / the Rust port can read the export.
+   * Defaults to TRUE in this release; planned to flip to false in the next major.
+   */
+  legacy?: boolean;
+}
+
+/** Internal constructor payload. */
+interface MajikKeyInit {
+  id: string;
+  fingerprint: MajikKeyFingerprint;
+  salt: string;
+  backup: string;
+  label?: string;
+  timestamp?: Date;
+  kdfVersion?: KDF_VERSION;
+  mnemonicLanguage?: MnemonicLanguage;
+  store: KeyStore;
 }
 
 /**
  * MajikKey
  * ---
- *
- * Seed phrase account library for the Majikah ecosystem.
- *
- * Every account stores FIVE keypairs, all deterministically derived from a
- * single BIP-39 mnemonic:
- *   1. X25519 (Curve25519)   — fingerprint, contact identity, legacy message compat
- *   2. ML-KEM-768 (FIPS-203) — post-quantum key encapsulation for v3 envelopes
- *   3. Ed25519               — classical signing
- *   4. ML-DSA-87 (FIPS-204)  — post-quantum signing
- *   5. Bitcoin (secp256k1)   — BIP-32/84 HD key, domain-separated by default (experimental)
- *
- * All derived from the 64-byte BIP-39 seed:
- *   seed[0..32]  → Ed25519 keypair — used directly for signing, AND converted
- *                  to X25519 via ed2curve for the encryption/identity keypair
- *                  (one Ed25519 keypair, two roles)
- *   seed[0..64]  → ml_kem768.keygen(seed) — full seed, deterministic
- *   hash(seed || "MajikSignatureSeedDSA") → 32-byte seed → ml_dsa87.keygen()
- *   seed[0..64]  → HDKey.fromMasterSeed(seed).derive(path) — BIP-32/84 Bitcoin key
- *
+ * Registry of keypairs deterministically derived from one BIP-39 mnemonic.
+ * See core/keys/registry.ts for every supported algorithm and its status.
  */
 export class MajikKey {
   private readonly _id: string;
@@ -251,196 +239,251 @@ export class MajikKey {
   private readonly _timestamp: Date;
   private readonly _mnemonicLanguage: MnemonicLanguage;
 
-  private _encryptedPrivateKey: ArrayBuffer;
-  private _encryptedPrivateKeyBase64: string;
+  private readonly _store: KeyStore;
   private _salt: string;
   private _label: string;
   private _kdfVersion: KDF_VERSION;
 
-  private _mlKemPublicKey: Uint8Array;
-  private _mlKemSecretKey?: Uint8Array;
-  private _encryptedMlKemSecretKey?: ArrayBuffer;
-  private _encryptedMlKemSecretKeyBase64?: string;
-
-  private _privateKey?: X25519RawKey;
-
-  private _edPublicKey?: Uint8Array;
-  private _edSecretKey?: Uint8Array;
-  private _encryptedEdSecretKey?: ArrayBuffer;
-  private _encryptedEdSecretKeyBase64?: string;
-
-  private _mlDsaPublicKey?: Uint8Array;
-  private _mlDsaSecretKey?: Uint8Array;
-  private _encryptedMlDsaSecretKey?: ArrayBuffer;
-  private _encryptedMlDsaSecretKeyBase64?: string;
-
-  /**
-   * @experimental
-   */
+  /** @experimental derived view over classic:ed25519; cached while unlocked */
   private _solanaKeypairMaterial?: SolanaKeypairMaterial;
 
-  /**
-   * @experimental
-   */
-  private _btcPublicKey?: Uint8Array;
-
-  /**
-   * @experimental
-   */
-  private _btcSecretKey?: Uint8Array;
-
-  /**
-   * @experimental
-   */
-  private _encryptedBtcSecretKey?: ArrayBuffer;
-
-  /**
-   * @experimental
-   */
-  private _encryptedBtcSecretKeyBase64?: string;
-
-  private constructor(options: MajikKeyConstructorOptions) {
-    this._id = options.id;
-    this._publicKey = options.publicKey;
-    this._publicKeyBase64 = options.publicKeyBase64;
-    this._fingerprint = options.fingerprint;
-    this._encryptedPrivateKey = options.encryptedPrivateKey;
-    this._encryptedPrivateKeyBase64 = options.encryptedPrivateKeyBase64;
-    this._salt = options.salt;
-    this._backup = options.backup;
-    this._label = options.label || "";
-    this._timestamp = options.timestamp || new Date();
-    this._kdfVersion = options.kdfVersion ?? KDF_VERSION.PBKDF2;
-    this._mlKemPublicKey = options.mlKemPublicKey;
-    this._mlKemSecretKey = options.mlKemSecretKey;
-    this._encryptedMlKemSecretKey = options.encryptedMlKemSecretKey;
-    this._encryptedMlKemSecretKeyBase64 = options.encryptedMlKemSecretKeyBase64;
-    this._privateKey = options.privateKey;
-
-    this._edPublicKey = options.edPublicKey;
-    this._encryptedEdSecretKey = options.encryptedEdSecretKey;
-    this._encryptedEdSecretKeyBase64 = options.encryptedEdSecretKeyBase64;
-    this._mlDsaPublicKey = options.mlDsaPublicKey;
-    this._encryptedMlDsaSecretKey = options.encryptedMlDsaSecretKey;
-    this._encryptedMlDsaSecretKeyBase64 = options.encryptedMlDsaSecretKeyBase64;
-
-    this._edSecretKey = options.edSecretKey;
-    this._mlDsaSecretKey = options.mlDsaSecretKey;
-
-    this._btcPublicKey = options.btcPublicKey;
-    this._btcSecretKey = options.btcSecretKey;
-    this._encryptedBtcSecretKey = options.encryptedBtcSecretKey;
-    this._encryptedBtcSecretKeyBase64 = options.encryptedBtcSecretKeyBase64;
-
-    this._mnemonicLanguage = options.mnemonicLanguage || "en";
+  private constructor(init: MajikKeyInit) {
+    this._id = init.id;
+    this._store = init.store;
+    const xPub = init.store.getPublicKey(KeyId.X25519);
+    this._publicKey = { raw: xPub };
+    this._publicKeyBase64 = arrayToBase64(xPub);
+    this._fingerprint = init.fingerprint;
+    this._salt = init.salt;
+    this._backup = init.backup;
+    this._label = init.label || "";
+    this._timestamp = init.timestamp || new Date();
+    this._kdfVersion = init.kdfVersion ?? KDF_VERSION.PBKDF2;
+    this._mnemonicLanguage = init.mnemonicLanguage || "en";
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
 
-  /** Account identifier. Equal to `fingerprint` for accounts created by this library. */
   get id(): MajikKeyFingerprint {
     return this._id;
   }
-
-  /** SHA-256 fingerprint of the X25519 public key. Stable identity anchor for the account. */
   get fingerprint(): MajikKeyFingerprint {
     return this._fingerprint;
   }
-
   /** X25519 public key. Always available, even when locked. */
   get publicKey(): X25519RawKey {
     return this._publicKey;
   }
-
-  /** X25519 public key, base64-encoded. Always available, even when locked. */
   get publicKeyBase64(): MajikKeyAddress {
     return this._publicKeyBase64;
   }
-
-  /** Human-readable, user-editable account name. Update via `updateLabel()`. */
   get label(): string {
     return this._label;
   }
-
-  /** BIP-39 wordlist language this account's mnemonic was generated/validated against. */
   get mnemonicLanguage(): MnemonicLanguage {
     return this._mnemonicLanguage;
   }
-
-  /**
-   * Encrypted mnemonic-verification blob (base64 JSON). Decryptable only
-   * with the original mnemonic — used internally to verify a supplied
-   * mnemonic before `importFromMnemonicBackup()` re-derives the full
-   * identity. Not a general-purpose private-key backup.
-   */
   get backup(): string {
     return this._backup;
   }
-
-  /** Account creation time. */
   get timestamp(): Date {
     return this._timestamp;
   }
-
-  /** KDF currently protecting every `encrypted*` field on this account: `1` = legacy PBKDF2, `2` = Argon2id. */
   get kdfVersion(): KDF_VERSION {
     return this._kdfVersion;
   }
-
-  /** `true` if this account is on the current KDF (Argon2id). `false` means it's still on legacy PBKDF2 — see `migrate()` or `importFromMnemonicBackup()`. */
   get isArgon2id(): boolean {
     return this._kdfVersion === KDF_VERSION.ARGON2ID;
   }
-
-  /** `true` if private key material is currently purged from memory (i.e. `lock()` was called, or `unlock()` hasn't been called yet). */
   get isLocked(): boolean {
-    return this._privateKey === undefined;
+    return !this._store.isUnlocked;
   }
-
-  /** `true` if private key material is currently decrypted in memory. The inverse of `isLocked`. */
   get isUnlocked(): boolean {
-    return this._privateKey !== undefined;
+    return this._store.isUnlocked;
   }
 
-  /** ML-KEM-768 (FIPS-203) public key. Post-quantum key encapsulation. Always available, even when locked. */
-  get mlKemPublicKey(): MLKEM768RawPublicKey {
-    return this._mlKemPublicKey;
+  /** `true` if this account holds every key in CORE_KEYS. Legacy accounts may not — see `missingKeys()` / `addKeys()`. */
+  get isCoreComplete(): boolean {
+    return this._store.hasAll(CORE_KEYS);
   }
 
-  /** ML-KEM-768 secret key. `undefined` unless the account is unlocked. ⚠️ Live key material — prefer `getMlKemSecretKey()` if you want a thrown error instead of `undefined` on locked accounts. */
-  get mlKemSecretKey(): Uint8Array | undefined {
-    return this._mlKemSecretKey;
-  }
-
-  /** `true` if this account has ML-KEM-768 keys (i.e. is post-quantum-encryption capable). `false` means it's a legacy account pending migration. */
-  get hasMlKem(): boolean {
-    return this._mlKemPublicKey !== undefined;
-  }
-
-  /** `true` if this account is on Argon2id *and* has ML-KEM-768 keys — i.e. fully migrated, nothing left to upgrade. */
+  /** `true` if this account is on Argon2id *and* has ML-KEM-768 keys. */
   get isFullyUpgraded(): boolean {
     return this.isArgon2id && this.hasMlKem;
   }
 
+  // ── Registry accessors ──────────────────────────────────────────────────────
+
+  /** Is this key present on the account? Works while locked. Derived views (web3:sol) count when their source key exists. */
+  hasKey(id: string): boolean {
+    if (this._store.has(id)) return true;
+    const def = getAlgorithm(id);
+    return (
+      !!def &&
+      def.kind === "derived" &&
+      !!def.derivedFrom &&
+      this._store.has(def.derivedFrom)
+    );
+  }
+
+  hasKeys(ids: readonly string[]): boolean {
+    return ids.every((id) => this.hasKey(id));
+  }
+
+  /** Which of `ids` (default: the core four) are NOT on this account. */
+  missingKeys(ids: readonly KeyId[] = CORE_KEYS): KeyId[] {
+    return ids.filter((id) => !this.hasKey(id));
+  }
+
+  /** Namespaced ids of every key available on this account, in canonical order. */
+  availableKeys(options?: { family?: KeyFamily }): KeyId[] {
+    return knownKeyIds(options?.family).filter((id) => this.hasKey(id));
+  }
+
+  /** Metadata for every available key. No secret material. */
+  listKeys(): KeyInfo[] {
+    return this.availableKeys().map((id) => {
+      const def = KEY_ALGORITHMS[id];
+      let pub: string | undefined;
+      try {
+        pub = arrayToBase64(this.getPublicKey(id));
+      } catch {
+        pub = undefined; // derived view while locked
+      }
+      return {
+        id,
+        family: def.family,
+        purpose: def.purpose,
+        kind: def.kind,
+        status: def.status,
+        publicKeyBase64: pub,
+      };
+    });
+  }
+
+  /** Every algorithm id this library version can create/enable. */
+  static supportedKeys(): KeyId[] {
+    return enableableKeyIds();
+  }
+
+  /** Public key bytes for `id`. Works while locked (derived views need an unlocked account). */
+  getPublicKey(id: KeyId): Uint8Array {
+    if (this._store.has(id)) return this._store.getPublicKey(id);
+    if (id === KeyId.SOL && this._store.has(KeyId.ED25519))
+      return this.getSolanaKeypairMaterial().publicKey;
+    throw new MajikKeyError(`No "${id}" key on this account`);
+  }
+
   /**
-   * @experimental secp256k1 Bitcoin public key. `undefined` if this account
-   * has no stored Bitcoin key material (e.g. it predates Web3 support and
-   * hasn't been re-imported via `importFromMnemonicBackup()`).
+   * With no argument: the X25519 private key wrapper.
+   * @deprecated The no-argument form. Use `getPrivateKey(KeyId.X25519)`.
    */
+  getPrivateKey(): X25519RawKey;
+  /** Secret key bytes for `id`. Throws if locked or absent. ⚠️ Live key material. */
+  getPrivateKey(id: KeyId): Uint8Array;
+  getPrivateKey(id?: KeyId): X25519RawKey | Uint8Array {
+    if (id === undefined) return { raw: this._requireSecret(KeyId.X25519) };
+    if (id === KeyId.SOL && this._store.has(KeyId.ED25519))
+      return this.getSolanaKeypairMaterial().secretKey;
+    return this._requireSecret(id);
+  }
+
+  /** A live handle with `.public` / `.private` / `.publicBase64`. Reads through to the account, so it never goes stale across lock(). */
+  getKeypair(id: KeyId): MajikKeypair {
+    if (!this.hasKey(id))
+      throw new MajikKeyError(`No "${id}" key on this account`);
+    return new MajikKeypair(
+      id,
+      () => this.getPublicKey(id),
+      () => this.getPrivateKey(id),
+      () => this.isUnlocked,
+    );
+  }
+
+  private _requireSecret(id: KeyId, missingMessage?: string): Uint8Array {
+    if (this.isLocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._store.has(id))
+      throw new MajikKeyError(
+        missingMessage ??
+          `No "${id}" key on this account — add it with addKeys(), which requires the mnemonic.`,
+      );
+    return this._store.getSecretKey(id);
+  }
+
+  // ── Deprecated per-algorithm getters (wrappers over the registry) ───────────
+
+  /** @deprecated Use `getPublicKey(KeyId.ML_KEM_768)`. */
+  get mlKemPublicKey(): MLKEM768RawPublicKey {
+    return (this._store.has(KeyId.ML_KEM_768)
+      ? this._store.getPublicKey(KeyId.ML_KEM_768)
+      : undefined) as unknown as MLKEM768RawPublicKey;
+  }
+  /** @deprecated Use `getPrivateKey(KeyId.ML_KEM_768)`. */
+  get mlKemSecretKey(): Uint8Array | undefined {
+    return this._store.peekSecretKey(KeyId.ML_KEM_768);
+  }
+  /** @deprecated Use `hasKey(KeyId.ML_KEM_768)`. */
+  get hasMlKem(): boolean {
+    return this._store.has(KeyId.ML_KEM_768);
+  }
+  /** @deprecated Use `getPublicKey(KeyId.ED25519)`. */
+  get edPublicKey(): ED25519RawPublicKey | undefined {
+    return this._store.has(KeyId.ED25519)
+      ? this._store.getPublicKey(KeyId.ED25519)
+      : undefined;
+  }
+  /** @deprecated Use `getPublicKey(KeyId.ML_DSA_87)`. */
+  get mlDsaPublicKey(): MLDSA87RawPublicKey | undefined {
+    return this._store.has(KeyId.ML_DSA_87)
+      ? this._store.getPublicKey(KeyId.ML_DSA_87)
+      : undefined;
+  }
+  /** @deprecated Use `hasKeys([KeyId.ED25519, KeyId.ML_DSA_87])`. */
+  get hasSigningKeys(): boolean {
+    return this._store.has(KeyId.ED25519) && this._store.has(KeyId.ML_DSA_87);
+  }
+  /** @experimental @deprecated Use `getPublicKey(KeyId.BTC)`. */
   get btcPublicKey(): BitcoinRawPublicKey | undefined {
-    return this._btcPublicKey;
+    return this._store.has(KeyId.BTC)
+      ? this._store.getPublicKey(KeyId.BTC)
+      : undefined;
   }
-
-  /** @experimental `true` if this account has a stored Bitcoin keypair. */
+  /** @experimental @deprecated Use `hasKey(KeyId.BTC)`. */
   get hasBitcoin(): boolean {
-    return this._btcPublicKey !== undefined;
+    return this._store.has(KeyId.BTC);
   }
 
-  /**
-   * Lightweight, non-secret snapshot of this account's state — no key bytes
-   * at all, encrypted or otherwise. Useful for account pickers, dashboards,
-   * or anywhere you want to display status without touching key material.
-   */
+  /** @deprecated Use `getPrivateKey(KeyId.ML_KEM_768)`. */
+  getMlKemSecretKey(): Uint8Array {
+    return this._requireSecret(
+      KeyId.ML_KEM_768,
+      "No ML-KEM secret key — add it with addKeys() (requires the mnemonic).",
+    );
+  }
+  /** @deprecated Use `getPrivateKey(KeyId.ED25519)`. */
+  getEdSecretKey(): Uint8Array {
+    return this._requireSecret(
+      KeyId.ED25519,
+      "No Ed25519 secret key — add it with addKeys() (requires the mnemonic).",
+    );
+  }
+  /** @deprecated Use `getPrivateKey(KeyId.ML_DSA_87)`. */
+  getMlDsaSecretKey(): Uint8Array {
+    return this._requireSecret(
+      KeyId.ML_DSA_87,
+      "No ML-DSA secret key — add it with addKeys() (requires the mnemonic).",
+    );
+  }
+  /** @experimental @deprecated Use `getPrivateKey(KeyId.BTC)`. */
+  getBtcSecretKey(): Uint8Array {
+    return this._requireSecret(
+      KeyId.BTC,
+      "No Bitcoin secret key — add it with addKeys([KeyId.BTC], mnemonic, passphrase).",
+    );
+  }
+
+  /** Non-secret snapshot of this account's state. */
   get metadata(): MajikKeyMetadata {
     return {
       id: this.id,
@@ -451,133 +494,67 @@ export class MajikKey {
       kdfVersion: this.kdfVersion,
       hasMlKem: this.hasMlKem,
       web3: {
+        hasEthereum: this.hasEthereum,
         hasBitcoin: this.hasBitcoin,
         hasSolana: this.hasSolanaKeypair,
       },
-
+      keys: this.availableKeys(),
       mnemonicLanguage: this.mnemonicLanguage || "en",
     };
-  }
-
-  /** Ed25519 public key. Classical signing — same keypair the X25519 identity key is converted from. Always available, even when locked. */
-  get edPublicKey(): ED25519RawPublicKey | undefined {
-    return this._edPublicKey;
-  }
-
-  /** ML-DSA-87 (FIPS-204) public key. Post-quantum signing. Always available, even when locked. */
-  get mlDsaPublicKey(): MLDSA87RawPublicKey | undefined {
-    return this._mlDsaPublicKey;
-  }
-
-  /** `true` if this account has both Ed25519 and ML-DSA-87 signing keys. `false` means it's a legacy account pending migration. */
-  get hasSigningKeys(): boolean {
-    return (
-      this._edPublicKey !== undefined && this._mlDsaPublicKey !== undefined
-    );
   }
 
   // ── CREATE ──────────────────────────────────────────────────────────────────
 
   /**
-   * Creates a brand-new MajikKey account from a BIP-39 mnemonic.
+   * Creates a brand-new MajikKey from a BIP-39 mnemonic and returns it UNLOCKED.
    *
-   * Derives the full key set in one pass — X25519, ML-KEM-768, Ed25519,
-   * ML-DSA-87, and a domain-separated Bitcoin key (see `MAJIK_BITCOIN_DOMAIN_PATH`)
-   * — encrypts every private key with Argon2id (KDF v2), and returns an
-   * **already-unlocked** instance (no `unlock()` call needed right after
-   * `create()`).
+   * Always derives the core four (X25519, Ed25519, ML-KEM-768, ML-DSA-87).
+   * Pass `options.keys` for more, e.g. `{ keys: [KeyId.BTC] }`.
    *
-   * @param mnemonic - A valid BIP-39 mnemonic phrase (12 or 24 words), matching `mnemonicLanguage`. Generate one with `MajikKey.generateMnemonic()`.
-   * @param passphrase - Passphrase used to derive the Argon2id encryption key for every private key on this account. This is *not* the mnemonic — losing it without the mnemonic makes the account unrecoverable.
-   * @param label - Optional human-readable account name. Defaults to an empty string. Update later via `updateLabel()`.
-   * @param mnemonicLanguage - BIP-39 wordlist to validate `mnemonic` against. Defaults to `"en"`.
-   * @param options.deriveBitcoin - @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true`.
-   * @returns An unlocked `MajikKey` instance, ready for immediate use — call `.lock()` when you're done with it.
-   * @throws {MajikKeyError} If `mnemonic` fails validation, `passphrase`/`label` fail their validators, or `mnemonic` doesn't match `mnemonicLanguage`'s wordlist.
+   * ⚠️ Behavior change vs 0.7: Bitcoin is no longer derived by default.
+   *
+   * @throws {MajikKeyError} on invalid mnemonic/passphrase/label or unusable key ids.
    */
   static async create(
     mnemonic: string,
     passphrase: string,
     label?: string,
-    options: {
-      mnemonicLanguage?: MnemonicLanguage;
-      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
-      deriveBitcoin?: boolean;
-    } = {
-      deriveBitcoin: true,
-      mnemonicLanguage: "en",
-    },
+    options: MajikKeyCreateOptions = {},
   ): Promise<MajikKey> {
     try {
       MajikKeyValidator.validateMnemonic(mnemonic);
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
 
-      const { deriveBitcoin, mnemonicLanguage } = options;
+      const mnemonicLanguage = options.mnemonicLanguage || "en";
+      const ids = MajikKey._resolveCreateKeys(options);
 
-      const wordlist = await MajikKey._getWordlist(mnemonicLanguage || "en");
-
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
       if (!validateMnemonic(mnemonic, wordlist)) {
         throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
       }
 
-      const identity = await MajikKey._deriveAndEncryptFromMnemonic(
+      const d = await MajikKey._deriveFromMnemonic(mnemonic, passphrase, ids);
+      const backup = await MajikKey._exportMnemonicBackup(
+        {
+          id: d.fingerprint,
+          fingerprint: d.fingerprint,
+          publicRaw: d.xPublic,
+          privateRaw: d.xSecret,
+        },
         mnemonic,
-        passphrase,
-        { deriveBitcoin: deriveBitcoin },
       );
-      const privateKeyBase64 = await MajikKey._exportKeyToBase64(
-        identity.privateKey,
-      );
-      const publicKeyBase64 = await MajikKey._exportKeyToBase64(
-        identity.publicKey,
-      );
-      const backup = await MajikKey._exportMnemonicBackup(identity, mnemonic);
 
       return new MajikKey({
-        id: identity.id,
-        publicKey: identity.publicKey,
-        publicKeyBase64,
-        fingerprint: identity.fingerprint,
-        encryptedPrivateKey: identity.encryptedPrivateKey,
-        encryptedPrivateKeyBase64: arrayBufferToBase64(
-          identity.encryptedPrivateKey,
-        ),
-        salt: identity.salt,
+        id: d.fingerprint,
+        fingerprint: d.fingerprint,
+        salt: d.salt,
         backup,
         label: label || "",
         timestamp: new Date(),
         kdfVersion: KDF_VERSION.ARGON2ID,
-        mlKemPublicKey: identity.mlKemPublicKey,
-        mlKemSecretKey: identity.mlKemSecretKey,
-        encryptedMlKemSecretKey: identity.encryptedMlKemSecretKey,
-        encryptedMlKemSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedMlKemSecretKey,
-        ),
-        privateKey: identity.privateKey,
-
-        edPublicKey: identity.edPublicKey,
-        encryptedEdSecretKey: identity.encryptedEdSecretKey,
-        encryptedEdSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedEdSecretKey,
-        ),
-        mlDsaPublicKey: identity.mlDsaPublicKey,
-        encryptedMlDsaSecretKey: identity.encryptedMlDsaSecretKey,
-        encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedMlDsaSecretKey,
-        ),
-
-        edSecretKey: identity.edSecretKey,
-        mlDsaSecretKey: identity.mlDsaSecretKey,
-
-        btcPublicKey: identity.btcPublicKey,
-        encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
-        encryptedBtcSecretKeyBase64: identity.encryptedBtcSecretKey
-          ? arrayBufferToBase64(identity.encryptedBtcSecretKey)
-          : undefined,
-        btcSecretKey: identity.btcSecretKey,
-
-        mnemonicLanguage: mnemonicLanguage,
+        mnemonicLanguage,
+        store: d.store,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -585,97 +562,76 @@ export class MajikKey {
     }
   }
 
+  private static _resolveCreateKeys(options: MajikKeyCreateOptions): KeyId[] {
+    const requested: string[] = [...(options.keys ?? [])];
+    if (options.deriveBitcoin === true) requested.push(KeyId.BTC);
+    return resolveRequestedKeys(requested);
+  }
+
   // ── READ ────────────────────────────────────────────────────────────────────
 
+  /**
+   * Parse a MajikKey from JSON. Accepts BOTH shapes:
+   *  - registry JSON (has `keys`)  → used as-is
+   *  - legacy flat JSON (no `keys`) → auto-migrated in memory (no secrets, no
+   *    passphrase, no mnemonic needed). Re-serialize with toJSON() to persist
+   *    the upgraded shape.
+   */
   static fromJSON(json: MajikKeyJSON | string): MajikKey {
     try {
       const parsed: MajikKeyJSON =
         typeof json === "string" ? JSON.parse(json) : json;
-      const validated = MajikKeyValidator.validateJSON(parsed);
       const anyParsed = parsed as any;
 
-      const publicKeyBuffer = base64ToArrayBuffer(validated.publicKey);
-      const encryptedPrivateKeyBuffer = base64ToArrayBuffer(
-        validated.encryptedPrivateKey,
-      );
+      let store: KeyStore;
+      let base: {
+        id: string;
+        fingerprint: string;
+        salt: string;
+        backup: string;
+        label?: string;
+        timestamp: string;
+        kdfVersion?: number;
+        mnemonicLanguage?: MnemonicLanguage;
+      };
 
-      const mlKemPublicKey = base64ToUint8Array(anyParsed.mlKemPublicKey);
-
-      let encryptedMlKemSecretKey: ArrayBuffer | undefined;
-      let encryptedMlKemSecretKeyBase64: string | undefined;
-      if (anyParsed.encryptedMlKemSecretKey) {
-        encryptedMlKemSecretKeyBase64 = anyParsed.encryptedMlKemSecretKey;
-        encryptedMlKemSecretKey = base64ToArrayBuffer(
-          anyParsed.encryptedMlKemSecretKey,
-        );
-      }
-
-      const edPublicKey = anyParsed.edPublicKey
-        ? base64ToUint8Array(anyParsed.edPublicKey)
-        : undefined;
-
-      let encryptedEdSecretKey: ArrayBuffer | undefined;
-      let encryptedEdSecretKeyBase64: string | undefined;
-      if (anyParsed.encryptedEdSecretKey) {
-        encryptedEdSecretKeyBase64 = anyParsed.encryptedEdSecretKey;
-        encryptedEdSecretKey = base64ToArrayBuffer(
-          anyParsed.encryptedEdSecretKey,
-        );
-      }
-
-      const mlDsaPublicKey = anyParsed.mlDsaPublicKey
-        ? base64ToUint8Array(anyParsed.mlDsaPublicKey)
-        : undefined;
-
-      let encryptedMlDsaSecretKey: ArrayBuffer | undefined;
-      let encryptedMlDsaSecretKeyBase64: string | undefined;
-      if (anyParsed.encryptedMlDsaSecretKey) {
-        encryptedMlDsaSecretKeyBase64 = anyParsed.encryptedMlDsaSecretKey;
-        encryptedMlDsaSecretKey = base64ToArrayBuffer(
-          anyParsed.encryptedMlDsaSecretKey,
-        );
-      }
-
-      const btcPublicKey = anyParsed.btcPublicKey
-        ? base64ToUint8Array(anyParsed.btcPublicKey)
-        : undefined;
-
-      let encryptedBtcSecretKey: ArrayBuffer | undefined;
-      let encryptedBtcSecretKeyBase64: string | undefined;
-      if (anyParsed.encryptedBtcSecretKey) {
-        encryptedBtcSecretKeyBase64 = anyParsed.encryptedBtcSecretKey;
-        encryptedBtcSecretKey = base64ToArrayBuffer(
-          anyParsed.encryptedBtcSecretKey,
-        );
+      if (Array.isArray(anyParsed.keys)) {
+        base = MajikKey._validateRegistryJSON(anyParsed);
+        store = KeyStore.fromEntries(anyParsed.keys);
+        if (!store.has(KeyId.X25519))
+          throw new MajikKeyError(
+            "Invalid MajikKey JSON: `keys` has no classic:x25519 entry",
+          );
+        // If the flat legacy field is also present it must agree (corruption/tamper check).
+        if (
+          anyParsed.publicKey &&
+          anyParsed.publicKey !==
+            arrayToBase64(store.getPublicKey(KeyId.X25519))
+        )
+          throw new MajikKeyError(
+            "Invalid MajikKey JSON: `publicKey` does not match the classic:x25519 entry",
+          );
+      } else {
+        const validated = MajikKeyValidator.validateJSON(parsed);
+        base = validated as any;
+        store = KeyStore.fromLegacyJSON({
+          ...anyParsed,
+          publicKey: validated.publicKey,
+          encryptedPrivateKey: validated.encryptedPrivateKey,
+        });
       }
 
       return new MajikKey({
-        id: validated.id,
-        publicKey: { raw: new Uint8Array(publicKeyBuffer) },
-        publicKeyBase64: validated.publicKey,
-        fingerprint: validated.fingerprint,
-        encryptedPrivateKey: encryptedPrivateKeyBuffer,
-        encryptedPrivateKeyBase64: validated.encryptedPrivateKey,
-        salt: validated.salt,
-        backup: validated.backup,
-        label: validated.label || "",
-        timestamp: new Date(validated.timestamp),
+        id: base.id,
+        fingerprint: base.fingerprint,
+        salt: base.salt,
+        backup: base.backup,
+        label: base.label || "",
+        timestamp: new Date(base.timestamp),
         kdfVersion:
-          (validated.kdfVersion as KDF_VERSION | undefined) ??
-          KDF_VERSION.PBKDF2,
-        mlKemPublicKey,
-        encryptedMlKemSecretKey,
-        encryptedMlKemSecretKeyBase64,
-        edPublicKey,
-        encryptedEdSecretKey,
-        encryptedEdSecretKeyBase64,
-        mlDsaPublicKey,
-        encryptedMlDsaSecretKey,
-        encryptedMlDsaSecretKeyBase64,
-        btcPublicKey,
-        encryptedBtcSecretKey,
-        encryptedBtcSecretKeyBase64,
-        mnemonicLanguage: validated?.mnemonicLanguage || "en",
+          (base.kdfVersion as KDF_VERSION | undefined) ?? KDF_VERSION.PBKDF2,
+        mnemonicLanguage: base.mnemonicLanguage || "en",
+        store,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -683,43 +639,63 @@ export class MajikKey {
     }
   }
 
+  private static _validateRegistryJSON(j: any) {
+    for (const f of ["id", "fingerprint", "salt", "backup", "timestamp"]) {
+      if (typeof j[f] !== "string" || !j[f])
+        throw new MajikKeyError(`Invalid MajikKey JSON: missing "${f}"`);
+    }
+    if (j.keysVersion !== undefined && j.keysVersion > KEYS_VERSION)
+      throw new MajikKeyError(
+        `This MajikKey JSON uses keys schema v${j.keysVersion}; this library supports up to v${KEYS_VERSION}. Upgrade the library.`,
+      );
+    return j as {
+      id: string;
+      fingerprint: string;
+      salt: string;
+      backup: string;
+      label?: string;
+      timestamp: string;
+      kdfVersion?: number;
+      mnemonicLanguage?: MnemonicLanguage;
+    };
+  }
+
   /**
    * Export a fully unlocked MajikKey with all raw private keys.
    * ⚠️ DANGEROUS — output contains unencrypted private key material.
    * Only use for server-side secrets injection.
-   * Never log, store in a database, or transmit over the network.
    */
   toDangerousJSON(): MajikKeyDangerousJSON {
     if (this.isLocked)
       throw new MajikKeyError(
         "MajikKey must be unlocked to export dangerous JSON.",
       );
-    if (
-      !this._edSecretKey ||
-      !this._mlDsaSecretKey ||
-      !this._mlKemSecretKey ||
-      !this._privateKey
-    )
+    if (!this.hasKeys(CORE_KEYS))
       throw new MajikKeyError(
-        "MajikKey is missing secret keys — re-import via importFromMnemonicBackup() first.",
+        "MajikKey is missing core keys — add them with addKeys(CORE_KEYS, mnemonic, passphrase) first.",
       );
 
+    const secretKeys: Record<string, string> = {};
+    for (const [id, secret] of this._store.exportSecrets())
+      secretKeys[id] = arrayToBase64(secret);
+
+    const s = (id: KeyId) => this._store.getSecretKey(id);
     return {
       ...this.toJSON(),
-      privateKeyBase64: arrayToBase64(this._privateKey.raw),
-      mlKemSecretKeyBase64: arrayToBase64(this._mlKemSecretKey),
-      edSecretKeyBase64: arrayToBase64(this._edSecretKey),
-      mlDsaSecretKeyBase64: arrayToBase64(this._mlDsaSecretKey),
-      btcSecretKeyBase64: this._btcSecretKey
-        ? arrayToBase64(this._btcSecretKey)
+      privateKeyBase64: arrayToBase64(s(KeyId.X25519)),
+      mlKemSecretKeyBase64: arrayToBase64(s(KeyId.ML_KEM_768)),
+      edSecretKeyBase64: arrayToBase64(s(KeyId.ED25519)),
+      mlDsaSecretKeyBase64: arrayToBase64(s(KeyId.ML_DSA_87)),
+      btcSecretKeyBase64: this._store.has(KeyId.BTC)
+        ? arrayToBase64(s(KeyId.BTC))
         : undefined,
+      secretKeys,
     };
   }
 
   /**
    * Reconstruct a fully unlocked MajikKey from a dangerous JSON export.
    * ⚠️ DANGEROUS — input contains unencrypted private key material.
-   * Intended for server-side use only (e.g. TSA signing key loaded from Cloudflare Secrets).
    * No KDF is involved — reconstruction is instant.
    */
   static fromDangerousJSON(json: MajikKeyDangerousJSON | string): MajikKey {
@@ -743,40 +719,34 @@ export class MajikKey {
           "Invalid MajikKeyDangerousJSON — missing required fields",
         );
 
-      const privateKeyBytes = base64ToUint8Array(parsed.privateKeyBase64);
-      const edPublicKey = base64ToUint8Array(parsed.edPublicKey);
-      const edSecretKey = base64ToUint8Array(parsed.edSecretKeyBase64);
-      const mlDsaPublicKey = base64ToUint8Array(parsed.mlDsaPublicKey);
-      const mlDsaSecretKey = base64ToUint8Array(parsed.mlDsaSecretKeyBase64);
-      const mlKemPublicKey = base64ToUint8Array(parsed.mlKemPublicKey);
-      const mlKemSecretKey = base64ToUint8Array(parsed.mlKemSecretKeyBase64);
+      const anyParsed = parsed as any;
+      const store = Array.isArray(anyParsed.keys)
+        ? KeyStore.fromEntries(anyParsed.keys)
+        : KeyStore.fromLegacyJSON(parsed as any);
 
-      const btcPublicKey = parsed.btcPublicKey
-        ? base64ToUint8Array(parsed.btcPublicKey)
-        : undefined;
-      const btcSecretKey = parsed.btcSecretKeyBase64
-        ? base64ToUint8Array(parsed.btcSecretKeyBase64)
-        : undefined;
+      const secrets = new Map<string, Uint8Array>();
+      const put = (id: KeyId, b64?: string) => {
+        if (b64 && store.has(id)) secrets.set(id, base64ToUint8Array(b64));
+      };
+      put(KeyId.X25519, parsed.privateKeyBase64);
+      put(KeyId.ML_KEM_768, parsed.mlKemSecretKeyBase64);
+      put(KeyId.ED25519, parsed.edSecretKeyBase64);
+      put(KeyId.ML_DSA_87, parsed.mlDsaSecretKeyBase64);
+      put(KeyId.BTC, parsed.btcSecretKeyBase64);
+      for (const [id, b64] of Object.entries(parsed.secretKeys ?? {}))
+        if (store.has(id)) secrets.set(id, base64ToUint8Array(b64));
+      store.attachSecrets(secrets);
 
       return new MajikKey({
         id: parsed.id,
         fingerprint: parsed.fingerprint,
-        publicKey: { raw: base64ToUint8Array(parsed.publicKey) },
-        publicKeyBase64: parsed.publicKey,
-        privateKey: { raw: privateKeyBytes },
-        encryptedPrivateKey: new ArrayBuffer(0),
-        encryptedPrivateKeyBase64: parsed.encryptedPrivateKey,
         salt: parsed.salt,
         backup: parsed.backup,
+        label: parsed.label || "",
+        timestamp: parsed.timestamp ? new Date(parsed.timestamp) : undefined,
         kdfVersion: (parsed?.kdfVersion as KDF_VERSION) || KDF_VERSION.ARGON2ID,
-        mlKemPublicKey,
-        mlKemSecretKey,
-        edPublicKey,
-        edSecretKey,
-        mlDsaPublicKey,
-        mlDsaSecretKey,
-        btcPublicKey,
-        btcSecretKey,
+        mnemonicLanguage: parsed.mnemonicLanguage,
+        store,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -809,14 +779,7 @@ export class MajikKey {
     mnemonicJson: MnemonicJSON | string,
     passphrase: string,
     label?: string,
-    options: {
-      mnemonicLanguage?: MnemonicLanguage;
-      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
-      deriveBitcoin?: boolean;
-    } = {
-      deriveBitcoin: true,
-      mnemonicLanguage: "en",
-    },
+    options: MajikKeyCreateOptions = {},
   ): Promise<MajikKey> {
     try {
       const parsed: MnemonicJSON =
@@ -845,337 +808,6 @@ export class MajikKey {
     return this;
   }
 
-  /**
-   * PHASE 2a — derive the vault key ONCE per operation.
-   *
-   * Why: today every encrypted blob (X25519, ML-KEM, Ed25519, ML-DSA, BTC) calls
-   * deriveKeyFromPassphraseArgon2() separately with the same passphrase + salt,
-   * i.e. 5 Argon2id runs per create()/unlock() even though the comments say
-   * "one Argon2id computation". Cost grows linearly with every key added to the
-   * registry, so this must land BEFORE we add more algorithms.
-   *
-   * Compatibility: the on-disk format is UNCHANGED. Each blob is still
-   * IV(12) || AES-256-GCM ciphertext under Argon2id(passphrase, salt) (or PBKDF2
-   * for legacy kdfVersion 1 X25519 blobs). Old JSON decrypts identically; new
-   * JSON is readable by old versions.
-   *
-   * HOW TO APPLY (all inside class MajikKey, MajikKey.ts):
-   *   1. ADD  the three helpers below (_deriveVaultKey, _seal, _open).
-   *   2. REPLACE _deriveAndEncryptFromMnemonic, unlock, updatePassphrase, migrate
-   *      with the versions below.
-   *   3. DELETE _encryptPrivateKey, _encryptMlKemSecretKey, _encryptSigningKey,
-   *      _decryptPrivateKey, _decryptMlKemSecretKey, _decryptSigningKey
-   *      (nothing else references them — grep first).
-   *   4. Run test/test-vectors.test.ts. It must stay green; unlock() should drop
-   *      from roughly 9–10 s to roughly 2 s under the noble fallback.
-   *
-   * Also fixed on the way (behavioral, strictly safer):
-   *   - unlock() is atomic: it no longer leaves the key half-unlocked
-   *     (isUnlocked === true with some secrets missing) if a later blob fails.
-   *   - updatePassphrase()/migrate() decrypt EVERYTHING first and only then
-   *     commit, so a failure can no longer leave a new salt paired with blobs
-   *     still encrypted under the old one.
-   *   - migrate() now re-encrypts every present blob (previously only X25519).
-   */
-
-  // ── 1. NEW HELPERS ──────────────────────────────────────────────────────────
-
-  /** One KDF run. kdfVersion 1 = legacy PBKDF2 (X25519 blob of old accounts only). */
-  private static async _deriveVaultKey(
-    passphrase: string,
-    salt: Uint8Array,
-    kdfVersion: KDF_VERSION = KDF_VERSION.ARGON2ID,
-  ): Promise<Uint8Array> {
-    return kdfVersion === KDF_VERSION.ARGON2ID
-      ? deriveKeyFromPassphraseArgon2(passphrase, salt)
-      : deriveKeyFromPassphrase(passphrase, salt);
-  }
-
-  /** IV(12) || AES-256-GCM(ciphertext+tag). Fresh random IV per blob. */
-  private static _seal(aesKey: Uint8Array, plaintext: Uint8Array): ArrayBuffer {
-    const iv = generateRandomBytes(IV_LENGTH);
-    const ciphertext = aesGcmEncrypt(aesKey, iv, plaintext);
-    return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
-  }
-
-  private static _open(
-    aesKey: Uint8Array,
-    blob: ArrayBuffer,
-    what: string,
-  ): Uint8Array {
-    const full = new Uint8Array(blob);
-    const plain = aesGcmDecrypt(
-      aesKey,
-      full.slice(0, IV_LENGTH),
-      full.slice(IV_LENGTH),
-    );
-    if (!plain)
-      throw new MajikKeyError(
-        `Failed to decrypt ${what} — incorrect passphrase or corrupted data`,
-      );
-    return plain;
-  }
-
-  // ── 2a. REPLACE _deriveAndEncryptFromMnemonic ───────────────────────────────
-
-  private static async _deriveAndEncryptFromMnemonic(
-    mnemonic: string,
-    passphrase: string,
-    options?: { deriveBitcoin?: boolean },
-  ): Promise<MajikKeyDerivedIdentity> {
-    const deriveBitcoin = options?.deriveBitcoin ?? true;
-    const encIdentity =
-      await EncryptionEngine.deriveIdentityFromMnemonic(mnemonic);
-
-    // Single salt AND single Argon2id run for every blob below.
-    const salt = generateRandomBytes(SALT_SIZE);
-    const aesKey = await MajikKey._deriveVaultKey(passphrase, salt);
-
-    try {
-      const xRaw = new Uint8Array((encIdentity.privateKey as any).raw);
-      const mlKemSecretKey = encIdentity.mlKemSecretKey!;
-      const edSecretKey = encIdentity.edSecretKey;
-      const mlDsaSecretKey = encIdentity.mlDsaSecretKey;
-
-      const encryptedPrivateKey = MajikKey._seal(aesKey, xRaw);
-      const encryptedMlKemSecretKey = MajikKey._seal(aesKey, mlKemSecretKey);
-      const encryptedEdSecretKey = MajikKey._seal(aesKey, edSecretKey);
-      const encryptedMlDsaSecretKey = MajikKey._seal(aesKey, mlDsaSecretKey);
-
-      // @experimental Bitcoin — unchanged derivation (domain-separated BIP-32/84).
-      let btcPublicKey: Uint8Array | undefined;
-      let btcSecretKey: Uint8Array | undefined;
-      let encryptedBtcSecretKey: ArrayBuffer | undefined;
-      if (deriveBitcoin) {
-        const rawSeed = await mnemonicToSeed(mnemonic);
-        const btcMaterial = deriveBitcoinKeypairFromSeed(rawSeed);
-        btcPublicKey = btcMaterial.publicKey;
-        btcSecretKey = btcMaterial.privateKey;
-        encryptedBtcSecretKey = MajikKey._seal(aesKey, btcMaterial.privateKey);
-      }
-
-      secureFill.call(xRaw, 0);
-
-      return {
-        id: encIdentity.fingerprint,
-        publicKey: encIdentity.publicKey,
-        fingerprint: encIdentity.fingerprint,
-        privateKey: encIdentity.privateKey,
-        encryptedPrivateKey,
-        salt: arrayToBase64(salt),
-        kdfVersion: KDF_VERSION.ARGON2ID,
-        mlKemPublicKey: encIdentity.mlKemPublicKey,
-        mlKemSecretKey,
-        encryptedMlKemSecretKey,
-        edPublicKey: encIdentity.edPublicKey,
-        edSecretKey,
-        encryptedEdSecretKey,
-        mlDsaPublicKey: encIdentity.mlDsaPublicKey,
-        mlDsaSecretKey,
-        encryptedMlDsaSecretKey,
-        btcPublicKey,
-        btcSecretKey,
-        encryptedBtcSecretKey,
-      };
-    } finally {
-      secureFill.call(aesKey, 0);
-    }
-  }
-
-  // ── 2b. REPLACE unlock ──────────────────────────────────────────────────────
-
-  async unlock(passphrase: string): Promise<this> {
-    try {
-      if (this.isUnlocked)
-        throw new MajikKeyError("MajikKey is already unlocked");
-      MajikKeyValidator.validatePassphrase(passphrase);
-
-      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-
-      // Key for the X25519 blob: PBKDF2 (legacy) or Argon2id, per kdfVersion.
-      const primaryKey = await MajikKey._deriveVaultKey(
-        passphrase,
-        salt,
-        this._kdfVersion,
-      );
-      // Every other blob was only ever written by Argon2id code. Reuse the same
-      // key when the account is already Argon2id; derive once more only for the
-      // (theoretical) legacy-KDF-with-extra-blobs case.
-      let argonKey: Uint8Array | undefined =
-        this._kdfVersion === KDF_VERSION.ARGON2ID ? primaryKey : undefined;
-
-      try {
-        const priv = MajikKey._open(
-          primaryKey,
-          this._encryptedPrivateKey,
-          "private key",
-        );
-
-        const hasExtras =
-          this._encryptedMlKemSecretKey ||
-          this._encryptedEdSecretKey ||
-          this._encryptedMlDsaSecretKey ||
-          this._encryptedBtcSecretKey;
-        if (hasExtras && !argonKey) {
-          argonKey = await MajikKey._deriveVaultKey(
-            passphrase,
-            salt,
-            KDF_VERSION.ARGON2ID,
-          );
-        }
-
-        // Decrypt into locals first; assign only if EVERYTHING succeeded.
-        const mlKem = this._encryptedMlKemSecretKey
-          ? MajikKey._open(
-              argonKey!,
-              this._encryptedMlKemSecretKey,
-              "ML-KEM secret key",
-            )
-          : undefined;
-        const ed = this._encryptedEdSecretKey
-          ? MajikKey._open(
-              argonKey!,
-              this._encryptedEdSecretKey,
-              "Ed25519 secret key",
-            )
-          : undefined;
-        const mlDsa = this._encryptedMlDsaSecretKey
-          ? MajikKey._open(
-              argonKey!,
-              this._encryptedMlDsaSecretKey,
-              "ML-DSA secret key",
-            )
-          : undefined;
-        const btc = this._encryptedBtcSecretKey
-          ? MajikKey._open(
-              argonKey!,
-              this._encryptedBtcSecretKey,
-              "Bitcoin secret key",
-            )
-          : undefined;
-
-        this._privateKey = { type: "private", raw: priv } as any;
-        this._mlKemSecretKey = mlKem;
-        this._edSecretKey = ed;
-        this._mlDsaSecretKey = mlDsa;
-        this._btcSecretKey = btc;
-        return this;
-      } finally {
-        secureFill.call(primaryKey, 0);
-        if (argonKey && argonKey !== primaryKey) secureFill.call(argonKey, 0);
-        secureFill.call(salt, 0);
-      }
-    } catch (err) {
-      if (err instanceof MajikKeyError) throw err;
-      throw new MajikKeyError(
-        "Failed to unlock MajikKey — incorrect passphrase or corrupted data",
-        err,
-      );
-    }
-  }
-
-  // ── 2c. REPLACE updatePassphrase + migrate (shared private core) ────────────
-
-  /**
-   * Decrypt every blob with (currentPassphrase, current salt/kdf), re-encrypt
-   * with (newPassphrase, fresh salt, Argon2id), then commit atomically.
-   * Does not require the key to be unlocked and does not touch in-memory
-   * plaintext secrets.
-   */
-  private async _reencryptAll(
-    currentPassphrase: string,
-    newPassphrase: string,
-  ): Promise<void> {
-    const oldSalt = new Uint8Array(base64ToArrayBuffer(this._salt));
-    const newSalt = generateRandomBytes(SALT_SIZE);
-
-    // Table of the optional blobs so Phase 2c can replace it with a `keys` loop.
-    const slots: Array<[enc: string, b64: string, label: string]> = [
-      [
-        "_encryptedMlKemSecretKey",
-        "_encryptedMlKemSecretKeyBase64",
-        "ML-KEM secret key",
-      ],
-      [
-        "_encryptedEdSecretKey",
-        "_encryptedEdSecretKeyBase64",
-        "Ed25519 secret key",
-      ],
-      [
-        "_encryptedMlDsaSecretKey",
-        "_encryptedMlDsaSecretKeyBase64",
-        "ML-DSA secret key",
-      ],
-      [
-        "_encryptedBtcSecretKey",
-        "_encryptedBtcSecretKeyBase64",
-        "Bitcoin secret key",
-      ],
-    ];
-    const self = this as any;
-
-    let oldPrimary: Uint8Array | undefined;
-    let oldArgon: Uint8Array | undefined;
-    let newKey: Uint8Array | undefined;
-    const plains: Uint8Array[] = [];
-    try {
-      oldPrimary = await MajikKey._deriveVaultKey(
-        currentPassphrase,
-        oldSalt,
-        this._kdfVersion,
-      );
-      oldArgon =
-        this._kdfVersion === KDF_VERSION.ARGON2ID ? oldPrimary : undefined;
-
-      // 1) decrypt everything
-      const priv = MajikKey._open(
-        oldPrimary,
-        this._encryptedPrivateKey,
-        "private key",
-      );
-      plains.push(priv);
-      const decrypted: Array<[string, string, Uint8Array]> = [];
-      for (const [enc, b64, label] of slots) {
-        if (!self[enc]) continue;
-        oldArgon ??= await MajikKey._deriveVaultKey(
-          currentPassphrase,
-          oldSalt,
-          KDF_VERSION.ARGON2ID,
-        );
-        const p = MajikKey._open(oldArgon, self[enc], label);
-        plains.push(p);
-        decrypted.push([enc, b64, p]);
-      }
-
-      // 2) re-encrypt everything under ONE new Argon2id key
-      newKey = await MajikKey._deriveVaultKey(
-        newPassphrase,
-        newSalt,
-        KDF_VERSION.ARGON2ID,
-      );
-      const newPriv = MajikKey._seal(newKey, priv);
-      const resealed = decrypted.map(
-        ([enc, b64, p]) => [enc, b64, MajikKey._seal(newKey!, p)] as const,
-      );
-
-      // 3) commit (nothing above mutated state, so a failure leaves the key intact)
-      this._encryptedPrivateKey = newPriv;
-      this._encryptedPrivateKeyBase64 = arrayBufferToBase64(newPriv);
-      for (const [enc, b64, blob] of resealed) {
-        self[enc] = blob;
-        self[b64] = arrayBufferToBase64(blob);
-      }
-      this._salt = arrayToBase64(newSalt);
-      this._kdfVersion = KDF_VERSION.ARGON2ID;
-    } finally {
-      for (const p of plains) secureFill.call(p, 0);
-      if (oldPrimary) secureFill.call(oldPrimary, 0);
-      if (oldArgon && oldArgon !== oldPrimary) secureFill.call(oldArgon, 0);
-      if (newKey) secureFill.call(newKey, 0);
-      secureFill.call(oldSalt, 0);
-    }
-  }
-
   async updatePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -1198,7 +830,7 @@ export class MajikKey {
 
   /**
    * Migrate KDF from PBKDF2 to Argon2id without changing passphrase.
-   * NOTE: Does not add new key types — use importFromMnemonicBackup() / addKeys().
+   * Does not add new key types — use addKeys() (requires the mnemonic).
    */
   async migrate(passphrase: string): Promise<this> {
     MajikKeyValidator.validatePassphrase(passphrase);
@@ -1212,117 +844,168 @@ export class MajikKey {
     }
   }
 
+  /**
+   * Add keypairs this account doesn't have yet (new algorithms, or core keys
+   * missing on a legacy account). Requires the original MNEMONIC: new keys are
+   * derived from the seed, which is never stored. Also requires the current
+   * passphrase (to encrypt the new keys under the account's existing salt).
+   *
+   * Safe by construction: the mnemonic must reproduce this account's X25519
+   * key, and the passphrase must decrypt it, before anything is added.
+   * Keys already present are skipped. Account must be on Argon2id — call
+   * `migrate(passphrase)` first if `isArgon2id` is false.
+   *
+   * @returns the ids that were added
+   */
+  async addKeys(
+    ids: readonly KeyId[],
+    mnemonic: string,
+    passphrase: string,
+  ): Promise<KeyId[]> {
+    try {
+      MajikKeyValidator.validateMnemonic(mnemonic);
+      MajikKeyValidator.validatePassphrase(passphrase);
+      if (!this.isArgon2id)
+        throw new MajikKeyError(
+          "Account is on the legacy KDF. Call migrate(passphrase) before addKeys().",
+        );
+
+      // resolveRequestedKeys validates status/implementation; we only add what was asked for AND is missing.
+      const resolved = resolveRequestedKeys(ids);
+      const toAdd = [...new Set(ids)].filter(
+        (id) => resolved.includes(id) && !this._store.has(id),
+      );
+      if (toAdd.length === 0) return [];
+
+      const wordlist = await MajikKey._getWordlist(this._mnemonicLanguage);
+      if (!validateMnemonic(mnemonic, wordlist))
+        throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
+
+      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
+      const aesKey = await MajikKey._deriveVaultKey(passphrase, salt);
+      const seed64 = await mnemonicToSeed(mnemonic);
+      try {
+        // 1) passphrase must be right
+        const xBlob = this._store.slot(KeyId.X25519)!.encryptedSecretKey;
+        if (!xBlob)
+          throw new MajikKeyError("Account has no encrypted X25519 key");
+        KeyStore.open(aesKey, xBlob, "classic:x25519 secret key");
+
+        // 2) mnemonic must belong to this account
+        const probe = deriveKeys(seed64, [KeyId.X25519]).get(KeyId.X25519)!;
+        if (fingerprintFromPublicRaw(probe.publicKey) !== this._fingerprint)
+          throw new MajikKeyError(
+            "That mnemonic does not belong to this account",
+          );
+
+        // 3) derive + seal + add
+        const derived = deriveKeys(seed64, toAdd);
+        for (const [id, kp] of derived) {
+          const slot: KeySlot = {
+            id,
+            publicKey: kp.publicKey,
+            encryptedSecretKey: KeyStore.seal(aesKey, kp.secretKey),
+            derivation: KEY_ALGORITHMS[id].derivation,
+            createdAt: new Date().toISOString(),
+          };
+          if (this.isUnlocked) slot.secretKey = kp.secretKey;
+          else secureFill.call(kp.secretKey, 0);
+          this._store.add(slot);
+        }
+        return toAdd;
+      } finally {
+        secureFill.call(aesKey, 0);
+        secureFill.call(seed64, 0);
+        secureFill.call(salt, 0);
+      }
+    } catch (err) {
+      if (err instanceof MajikKeyError) throw err;
+      throw new MajikKeyError("Failed to add keys", err);
+    }
+  }
+
   // ── LOCK / UNLOCK ────────────────────────────────────────────────────────────
 
-  // required
   lock(): this {
-    // 1. Zeroize raw bytes of all active keys
-    // Apply the secure fill using .call(targetArray, value)
-    if (
-      this._privateKey &&
-      "raw" in this._privateKey &&
-      this._privateKey.raw instanceof Uint8Array
-    ) {
-      secureFill.call(this._privateKey.raw, 0);
-    }
-    if (this._mlKemSecretKey) secureFill.call(this._mlKemSecretKey, 0);
-    if (this._edSecretKey) secureFill.call(this._edSecretKey, 0);
-    if (this._mlDsaSecretKey) secureFill.call(this._mlDsaSecretKey, 0);
-    if (this._btcSecretKey) secureFill.call(this._btcSecretKey, 0);
-
+    this._store.lock();
     if (this._solanaKeypairMaterial) {
       secureFill.call(this._solanaKeypairMaterial.secretKey, 0);
     }
-    this._privateKey = undefined;
-    this._mlKemSecretKey = undefined;
-    this._edSecretKey = undefined;
-    this._mlDsaSecretKey = undefined;
-    this._btcSecretKey = undefined;
     this._solanaKeypairMaterial = undefined;
     return this;
+  }
+
+  /** One KDF run decrypts every key. Atomic: a failure leaves the account fully locked. */
+  async unlock(passphrase: string): Promise<this> {
+    try {
+      if (this.isUnlocked)
+        throw new MajikKeyError("MajikKey is already unlocked");
+      MajikKeyValidator.validatePassphrase(passphrase);
+
+      const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
+      const primaryKey = await MajikKey._deriveVaultKey(
+        passphrase,
+        salt,
+        this._kdfVersion,
+      );
+      let argonKey: Uint8Array | undefined =
+        this._kdfVersion === KDF_VERSION.ARGON2ID ? primaryKey : undefined;
+      try {
+        if (!argonKey && this._hasNonX25519Blobs())
+          argonKey = await MajikKey._deriveVaultKey(
+            passphrase,
+            salt,
+            KDF_VERSION.ARGON2ID,
+          );
+        this._store.unlock((slot) =>
+          slot.id === KeyId.X25519 ? primaryKey : argonKey!,
+        );
+        return this;
+      } finally {
+        secureFill.call(primaryKey, 0);
+        if (argonKey && argonKey !== primaryKey) secureFill.call(argonKey, 0);
+        secureFill.call(salt, 0);
+      }
+    } catch (err) {
+      if (err instanceof MajikKeyError) throw err;
+      throw new MajikKeyError(
+        "Failed to unlock MajikKey — incorrect passphrase or corrupted data",
+        err,
+      );
+    }
   }
 
   async verify(passphrase: string): Promise<boolean> {
     try {
       const salt = new Uint8Array(base64ToArrayBuffer(this._salt));
-      await MajikKey._decryptPrivateKey(
-        this._encryptedPrivateKey,
+      const key = await MajikKey._deriveVaultKey(
         passphrase,
         salt,
         this._kdfVersion,
       );
-      return true;
+      try {
+        KeyStore.open(
+          key,
+          this._store.slot(KeyId.X25519)!.encryptedSecretKey!,
+          "private key",
+        );
+        return true;
+      } finally {
+        secureFill.call(key, 0);
+      }
     } catch {
       return false;
     }
   }
 
-  getPrivateKey(): X25519RawKey {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    return this._privateKey!;
-  }
-
+  /** @deprecated Use `getPrivateKey(KeyId.X25519)`. */
   getPrivateKeyBase64(): string {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    return arrayToBase64(this._privateKey!.raw);
-  }
-
-  getMlKemSecretKey(): Uint8Array {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._mlKemSecretKey)
-      throw new MajikKeyError(
-        "No ML-KEM secret key — re-import via importFromMnemonicBackup() for full migration.",
-      );
-    return this._mlKemSecretKey;
-  }
-
-  getEdSecretKey(): Uint8Array {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._edSecretKey)
-      throw new MajikKeyError(
-        "No Ed25519 secret key — re-import via importFromMnemonicBackup() for full migration.",
-      );
-    return this._edSecretKey;
-  }
-
-  getMlDsaSecretKey(): Uint8Array {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._mlDsaSecretKey)
-      throw new MajikKeyError(
-        "No ML-DSA secret key — re-import via importFromMnemonicBackup() for full migration.",
-      );
-    return this._mlDsaSecretKey;
+    return arrayToBase64(this._requireSecret(KeyId.X25519));
   }
 
   /**
    * Executes an operation against an already-unlocked MajikKey and
-   * automatically locks the key when the operation completes.
-   *
-   * The key is always locked after the operation, including when the
-   * operation throws or rejects.
-   *
-   * @param key - An already-unlocked MajikKey instance.
-   * @param operation - Synchronous or asynchronous operation to execute.
-   * @returns The result returned by the operation.
-   *
-   * @throws {MajikKeyError} If the key is locked.
-   * @throws {MajikKeyError} If `operation` is not a function.
-   *
-   * @example
-   * ```ts
-   * await key.unlock(passphrase);
-   *
-   * const signature = await MajikKey.withAutoLock(key, async (key) => {
-   *   return sign(key.getEdSecretKey(), message);
-   * });
-   *
-   * // key.isLocked === true
-   * ```
+   * automatically locks the key when the operation completes (even on throw).
    */
   static async withAutoLock<T>(
     key: MajikKey,
@@ -1331,17 +1014,14 @@ export class MajikKey {
     if (!(key instanceof MajikKey)) {
       throw new MajikKeyError("A valid MajikKey instance is required");
     }
-
     if (key.isLocked) {
       throw new MajikKeyError(
         "MajikKey must be unlocked before calling withAutoLock()",
       );
     }
-
     if (typeof operation !== "function") {
       throw new MajikKeyError("Operation must be a function");
     }
-
     try {
       return await operation(key);
     } finally {
@@ -1349,37 +1029,88 @@ export class MajikKey {
     }
   }
 
+  private _hasNonX25519Blobs(): boolean {
+    return this._store
+      .ids()
+      .some(
+        (id) =>
+          id !== KeyId.X25519 && !!this._store.slot(id)?.encryptedSecretKey,
+      );
+  }
+
+  /**
+   * Decrypt every blob under (current passphrase, current salt/KDF), re-encrypt
+   * under (new passphrase, fresh salt, Argon2id), then commit atomically.
+   * Does not need the account to be unlocked and never touches plaintext in memory.
+   */
+  private async _reencryptAll(
+    currentPassphrase: string,
+    newPassphrase: string,
+  ): Promise<void> {
+    const oldSalt = new Uint8Array(base64ToArrayBuffer(this._salt));
+    const newSalt = generateRandomBytes(SALT_SIZE);
+    let oldPrimary: Uint8Array | undefined;
+    let oldArgon: Uint8Array | undefined;
+    let newKey: Uint8Array | undefined;
+    try {
+      oldPrimary = await MajikKey._deriveVaultKey(
+        currentPassphrase,
+        oldSalt,
+        this._kdfVersion,
+      );
+      oldArgon =
+        this._kdfVersion === KDF_VERSION.ARGON2ID ? oldPrimary : undefined;
+      if (!oldArgon && this._hasNonX25519Blobs())
+        oldArgon = await MajikKey._deriveVaultKey(
+          currentPassphrase,
+          oldSalt,
+          KDF_VERSION.ARGON2ID,
+        );
+
+      newKey = await MajikKey._deriveVaultKey(
+        newPassphrase,
+        newSalt,
+        KDF_VERSION.ARGON2ID,
+      );
+      const blobs = this._store.prepareReseal(
+        (slot) => (slot.id === KeyId.X25519 ? oldPrimary! : oldArgon!),
+        newKey,
+      );
+      this._store.commitReseal(blobs);
+      this._salt = arrayToBase64(newSalt);
+      this._kdfVersion = KDF_VERSION.ARGON2ID;
+    } finally {
+      if (oldPrimary) secureFill.call(oldPrimary, 0);
+      if (oldArgon && oldArgon !== oldPrimary) secureFill.call(oldArgon, 0);
+      if (newKey) secureFill.call(newKey, 0);
+      secureFill.call(oldSalt, 0);
+    }
+  }
+
   // ── SERIALIZATION ────────────────────────────────────────────────────────────
 
-  toJSON(): MajikKeyJSON {
+  /**
+   * Serialize (safe at rest: only passphrase-encrypted secrets).
+   * Writes the registry (`keys`) AND, by default, the pre-registry flat fields
+   * for compatibility. Pass `{ legacy: false }` for registry-only output.
+   * (JSON.stringify passes a string here; that is treated as "defaults".)
+   */
+  toJSON(options?: MajikKeyToJSONOptions | string): MajikKeyJSON {
+    const legacy = !(typeof options === "object" && options?.legacy === false);
     return {
       id: this._id,
       label: this._label,
       publicKey: this._publicKeyBase64,
       fingerprint: this._fingerprint,
-      encryptedPrivateKey: this._encryptedPrivateKeyBase64,
       salt: this._salt,
       backup: this._backup,
       timestamp: this._timestamp.toISOString(),
       kdfVersion: this._kdfVersion,
-      mlKemPublicKey: this._mlKemPublicKey
-        ? arrayToBase64(this._mlKemPublicKey)
-        : undefined,
-      encryptedMlKemSecretKey: this._encryptedMlKemSecretKeyBase64,
-      edPublicKey: this._edPublicKey
-        ? arrayToBase64(this._edPublicKey)
-        : undefined,
-      encryptedEdSecretKey: this._encryptedEdSecretKeyBase64,
-      mlDsaPublicKey: this._mlDsaPublicKey
-        ? arrayToBase64(this._mlDsaPublicKey)
-        : undefined,
-      encryptedMlDsaSecretKey: this._encryptedMlDsaSecretKeyBase64,
-      btcPublicKey: this._btcPublicKey
-        ? arrayToBase64(this._btcPublicKey)
-        : undefined,
-      encryptedBtcSecretKey: this._encryptedBtcSecretKeyBase64,
       mnemonicLanguage: this._mnemonicLanguage,
-    };
+      keysVersion: KEYS_VERSION,
+      keys: this._store.toEntries(),
+      ...(legacy ? this._store.toLegacyJSON() : {}),
+    } as MajikKeyJSON;
   }
 
   toString(pretty = false): string {
@@ -1394,12 +1125,9 @@ export class MajikKey {
   ): Promise<string> {
     if (strength !== 128 && strength !== 256)
       throw new MajikKeyError("Strength must be 128 or 256");
-
     const loader = WORDLISTS[language];
     if (!loader) throw new MajikKeyError("Unsupported language");
-
     const wordlist = await MajikKey._getWordlist(language);
-
     return bip39GenerateMnemonic(wordlist, strength);
   }
 
@@ -1416,11 +1144,9 @@ export class MajikKey {
    * Converts the MajikKey to a MajikContact.
    * You can pass a custom metadata type if needed, e.g., toContact<MyMeta>()
    */
-
   toContact<TMeta extends MajikContactMeta = MajikContactMeta>(
     initialMeta?: Partial<TMeta>,
   ): MajikContact<TMeta>;
-
   /** Build any MajikContact subclass by passing its constructor. */
   toContact<
     TMeta extends MajikContactMeta,
@@ -1429,7 +1155,6 @@ export class MajikKey {
     ContactClass: new (data: MajikContactData<TMeta>) => TContact,
     initialMeta?: Partial<TMeta>,
   ): TContact;
-
   toContact(arg1?: unknown, arg2?: unknown): MajikContact<any> {
     const ContactClass = (
       typeof arg1 === "function" ? arg1 : MajikContact
@@ -1444,11 +1169,11 @@ export class MajikKey {
       fingerprint: this._fingerprint,
       meta: { label: this._label, ...initialMeta },
       mlKey: arrayToBase64(this.mlKemPublicKey),
-      edPublicKeyBase64: this._edPublicKey
-        ? arrayToBase64(this._edPublicKey)
+      edPublicKeyBase64: this.edPublicKey
+        ? arrayToBase64(this.edPublicKey)
         : undefined,
-      mlDsaPublicKeyBase64: this._mlDsaPublicKey
-        ? arrayToBase64(this._mlDsaPublicKey)
+      mlDsaPublicKeyBase64: this.mlDsaPublicKey
+        ? arrayToBase64(this.mlDsaPublicKey)
         : undefined,
     });
   }
@@ -1458,16 +1183,23 @@ export class MajikKey {
       throw new MajikKeyError(
         "Cannot convert locked MajikKey to KeyIdentity. Unlock first.",
       );
+    const blob = this._store.slot(KeyId.X25519)!.encryptedSecretKey!;
     return {
       id: this._id,
       publicKey: this._publicKey,
       fingerprint: this._fingerprint,
-      privateKey: this._privateKey!,
-      encryptedPrivateKey: this._encryptedPrivateKey,
+      privateKey: { raw: this._requireSecret(KeyId.X25519) },
+      encryptedPrivateKey: blob.slice().buffer as ArrayBuffer,
       salt: this._salt,
       kdfVersion: this._kdfVersion,
-      mlKemPublicKey: this._mlKemPublicKey,
-      mlKemSecretKey: this._mlKemSecretKey,
+      mlKemPublicKey: this.mlKemPublicKey,
+      mlKemSecretKey: this.mlKemSecretKey,
+      edPublicKey: this.edPublicKey,
+      edSecretKey: this._store.peekSecretKey(KeyId.ED25519),
+      mlDsaPublicKey: this.mlDsaPublicKey,
+      mlDsaSecretKey: this._store.peekSecretKey(KeyId.ML_DSA_87),
+      btcPublicKey: this.btcPublicKey,
+      btcSecretKey: this._store.peekSecretKey(KeyId.BTC),
     };
   }
 
@@ -1480,7 +1212,9 @@ export class MajikKey {
       id: this._id,
       publicKey: this._publicKeyBase64,
       fingerprint: this._fingerprint,
-      encryptedPrivateKey: this._encryptedPrivateKeyBase64,
+      encryptedPrivateKey: arrayToBase64(
+        this._store.slot(KeyId.X25519)!.encryptedSecretKey!,
+      ),
       salt: this._salt,
     };
   }
@@ -1505,26 +1239,27 @@ export class MajikKey {
     if (this.isLocked)
       throw new MajikKeyError("MajikKey must be unlocked to export backup");
     MajikKeyValidator.validateMnemonic(mnemonic);
-    return MajikKey._exportMnemonicBackup(this.toKeyIdentity(), mnemonic);
+    return MajikKey._exportMnemonicBackup(
+      {
+        id: this._id,
+        fingerprint: this._fingerprint,
+        publicRaw: this._publicKey.raw,
+        privateRaw: this._requireSecret(KeyId.X25519),
+      },
+      mnemonic,
+    );
   }
 
   /**
-   * Import a MajikKey from a mnemonic-encrypted backup.
-   *
+   * Import a MajikKey from a mnemonic-encrypted backup. Re-derives the account
+   * from the mnemonic: the core four (plus `options.keys`) under a new passphrase.
    */
   static async importFromMnemonicBackup(
     backup: string,
     mnemonic: string,
     passphrase: string,
     label?: string,
-    options: {
-      mnemonicLanguage?: MnemonicLanguage;
-      /** @experimental Set `false` to skip deriving the Bitcoin keypair. Defaults to `true` for backward compatibility. */
-      deriveBitcoin?: boolean;
-    } = {
-      deriveBitcoin: true,
-      mnemonicLanguage: "en",
-    },
+    options: MajikKeyCreateOptions = {},
   ): Promise<MajikKey> {
     try {
       if (!backup || typeof backup !== "string")
@@ -1533,10 +1268,10 @@ export class MajikKey {
       MajikKeyValidator.validatePassphrase(passphrase);
       MajikKeyValidator.validateLabel(label);
 
-      const { deriveBitcoin, mnemonicLanguage } = options;
+      const mnemonicLanguage = options.mnemonicLanguage || "en";
+      const ids = MajikKey._resolveCreateKeys(options);
 
-      const wordlist = await MajikKey._getWordlist(mnemonicLanguage || "en");
-
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
       if (!validateMnemonic(mnemonic, wordlist)) {
         throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
       }
@@ -1549,6 +1284,8 @@ export class MajikKey {
         publicKey: string;
         fingerprint: string;
         backupKdfVersion?: number;
+        /** 1 (or absent) = legacy "MajikMessage…" salt; 2 = "MajikKey…" salt. */
+        backupSaltVersion?: number;
       };
 
       if (
@@ -1570,63 +1307,21 @@ export class MajikKey {
         parsed.ciphertext,
         mnemonic,
         backupKdfVersion,
+        parsed.backupSaltVersion,
       );
 
-      // Re-derive complete identity from mnemonic — gets ML-KEM for free
-      const identity = await MajikKey._deriveAndEncryptFromMnemonic(
-        mnemonic,
-        passphrase,
-        { deriveBitcoin: deriveBitcoin },
-      );
-
-      const privateKeyBase64 = await MajikKey._exportKeyToBase64(
-        identity.privateKey,
-      );
-      const publicKeyBase64 = await MajikKey._exportKeyToBase64(
-        identity.publicKey,
-      );
-      const id = parsed.id || identity.id;
+      const d = await MajikKey._deriveFromMnemonic(mnemonic, passphrase, ids);
 
       return new MajikKey({
-        id,
-        publicKey: identity.publicKey,
-        publicKeyBase64,
-        fingerprint: identity.fingerprint,
-        encryptedPrivateKey: identity.encryptedPrivateKey,
-        encryptedPrivateKeyBase64: arrayBufferToBase64(
-          identity.encryptedPrivateKey,
-        ),
-        salt: identity.salt,
+        id: parsed.id || d.fingerprint,
+        fingerprint: d.fingerprint,
+        salt: d.salt,
         backup,
         label: label || "",
         timestamp: new Date(),
         kdfVersion: KDF_VERSION.ARGON2ID,
-        mlKemPublicKey: identity.mlKemPublicKey,
-        mlKemSecretKey: identity.mlKemSecretKey,
-        encryptedMlKemSecretKey: identity.encryptedMlKemSecretKey,
-        encryptedMlKemSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedMlKemSecretKey,
-        ),
-        privateKey: identity.privateKey,
-        edPublicKey: identity.edPublicKey,
-        encryptedEdSecretKey: identity.encryptedEdSecretKey,
-        encryptedEdSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedEdSecretKey,
-        ),
-        mlDsaPublicKey: identity.mlDsaPublicKey,
-        encryptedMlDsaSecretKey: identity.encryptedMlDsaSecretKey,
-        encryptedMlDsaSecretKeyBase64: arrayBufferToBase64(
-          identity.encryptedMlDsaSecretKey,
-        ),
-        edSecretKey: identity.edSecretKey,
-        mlDsaSecretKey: identity.mlDsaSecretKey,
-        btcPublicKey: identity.btcPublicKey,
-        encryptedBtcSecretKey: identity.encryptedBtcSecretKey,
-        encryptedBtcSecretKeyBase64: identity.encryptedBtcSecretKey
-          ? arrayBufferToBase64(identity.encryptedBtcSecretKey)
-          : undefined,
-        btcSecretKey: identity.btcSecretKey,
-        mnemonicLanguage: mnemonicLanguage || "en",
+        mnemonicLanguage, // fix: previously dropped, silently resetting to "en"
+        store: d.store,
       });
     } catch (err) {
       if (err instanceof MajikKeyError) throw err;
@@ -1634,7 +1329,7 @@ export class MajikKey {
     }
   }
 
-  // ── PRIVATE: Core Derivation ─────────────────────────────────────────────────
+  // ── PRIVATE: derivation + vault crypto ───────────────────────────────────────
 
   private static async _getWordlist(
     language: MnemonicLanguage,
@@ -1644,102 +1339,49 @@ export class MajikKey {
     return mod.wordlist;
   }
 
-  // ── PRIVATE: Encryption/Decryption ───────────────────────────────────────────
-
-  private static async _encryptPrivateKey(
-    buffer: ArrayBuffer,
-    passphrase: string,
-    salt: Uint8Array,
-  ): Promise<{ blob: ArrayBuffer; kdfVersion: KDF_VERSION }> {
-    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
-    const iv = generateRandomBytes(IV_LENGTH);
-    const ciphertext = aesGcmEncrypt(keyBytes, iv, new Uint8Array(buffer));
-    return {
-      blob: concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer,
-      kdfVersion: KDF_VERSION.ARGON2ID,
-    };
-  }
-
   /**
-   * Encrypt the ML-KEM secret key using the same Argon2id-derived key as X25519
-   * (same passphrase + same salt) but a DIFFERENT random IV. One Argon2id
-   * computation → two independently encrypted blobs.
+   * Derive `ids` from the mnemonic and seal each secret under ONE Argon2id
+   * key (single salt, single KDF run). Returns an UNLOCKED store.
    */
-  private static async _encryptMlKemSecretKey(
-    mlKemSecretKey: Uint8Array,
+  private static async _deriveFromMnemonic(
+    mnemonic: string,
     passphrase: string,
-    salt: Uint8Array,
-  ): Promise<ArrayBuffer> {
-    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
-    const iv = generateRandomBytes(IV_LENGTH); // different IV from X25519 blob
-    const ciphertext = aesGcmEncrypt(keyBytes, iv, mlKemSecretKey);
-    return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
-  }
-
-  private static async _encryptSigningKey(
-    keyBytes_: Uint8Array,
-    passphrase: string,
-    salt: Uint8Array,
-  ): Promise<ArrayBuffer> {
-    const aesKey = await deriveKeyFromPassphraseArgon2(passphrase, salt);
-    const iv = generateRandomBytes(IV_LENGTH);
-    const ciphertext = aesGcmEncrypt(aesKey, iv, keyBytes_);
-    return concatUint8Arrays(iv, ciphertext).buffer as ArrayBuffer;
-  }
-
-  private static async _decryptPrivateKey(
-    buffer: ArrayBuffer,
-    passphrase: string,
-    salt: Uint8Array,
-    kdfVersion: KDF_VERSION = KDF_VERSION.PBKDF2,
-  ): Promise<ArrayBuffer> {
-    const keyBytes =
-      kdfVersion === KDF_VERSION.ARGON2ID
-        ? await deriveKeyFromPassphraseArgon2(passphrase, salt)
-        : deriveKeyFromPassphrase(passphrase, salt);
-
-    const full = new Uint8Array(buffer);
-    const iv = full.slice(0, IV_LENGTH);
-    const ciphertext = full.slice(IV_LENGTH);
-    const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
-    if (!plain)
-      throw new MajikKeyError(
-        "Decryption failed — incorrect passphrase or corrupted data",
-      );
-    return plain.buffer as ArrayBuffer;
-  }
-
-  private static async _decryptMlKemSecretKey(
-    buffer: ArrayBuffer,
-    passphrase: string,
-    salt: Uint8Array,
-  ): Promise<Uint8Array> {
-    // ML-KEM keys are only ever written by Argon2id (v2) code
-    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
-    const full = new Uint8Array(buffer);
-    const iv = full.slice(0, IV_LENGTH);
-    const ciphertext = full.slice(IV_LENGTH);
-    const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
-    if (!plain) throw new MajikKeyError("Failed to decrypt ML-KEM secret key");
-    return plain;
-  }
-
-  private static async _decryptSigningKey(
-    buffer: ArrayBuffer,
-    passphrase: string,
-    salt: Uint8Array,
-  ): Promise<Uint8Array> {
-    const keyBytes = await deriveKeyFromPassphraseArgon2(passphrase, salt);
+    ids: readonly KeyId[],
+  ) {
+    const seed64 = await mnemonicToSeed(mnemonic);
+    let derived;
     try {
-      const full = new Uint8Array(buffer);
-      const iv = full.slice(0, IV_LENGTH);
-      const ciphertext = full.slice(IV_LENGTH);
-      const plain = aesGcmDecrypt(keyBytes, iv, ciphertext);
-      if (!plain) throw new MajikKeyError("Failed to decrypt signing key");
-      return plain;
+      derived = deriveKeys(seed64, ids);
     } finally {
-      secureFill.call(keyBytes, 0);
+      secureFill.call(seed64, 0);
     }
+
+    const salt = generateRandomBytes(SALT_SIZE);
+    const aesKey = await MajikKey._deriveVaultKey(passphrase, salt);
+    try {
+      const store = KeyStore.fromDerived(derived, aesKey);
+      const x = derived.get(KeyId.X25519)!;
+      return {
+        store,
+        salt: arrayToBase64(salt),
+        fingerprint: fingerprintFromPublicRaw(x.publicKey),
+        xPublic: x.publicKey,
+        xSecret: x.secretKey,
+      };
+    } finally {
+      secureFill.call(aesKey, 0);
+    }
+  }
+
+  /** One KDF run. kdfVersion 1 = legacy PBKDF2 (X25519 blob of old accounts only). */
+  private static async _deriveVaultKey(
+    passphrase: string,
+    salt: Uint8Array,
+    kdfVersion: KDF_VERSION = KDF_VERSION.ARGON2ID,
+  ): Promise<Uint8Array> {
+    return kdfVersion === KDF_VERSION.ARGON2ID
+      ? deriveKeyFromPassphraseArgon2(passphrase, salt)
+      : deriveKeyFromPassphrase(passphrase, salt);
   }
 
   // ── PRIVATE: Backup ──────────────────────────────────────────────────────────
@@ -1749,10 +1391,13 @@ export class MajikKey {
     ciphertextBase64: string,
     mnemonic: string,
     backupKdfVersion: KDF_VERSION,
+    backupSaltVersion?: number,
   ): Promise<void> {
     const iv = new Uint8Array(base64ToArrayBuffer(ivBase64));
     const ciphertext = base64ToArrayBuffer(ciphertextBase64);
-    const mnemonicSalt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
+    const mnemonicSalt = new TextEncoder().encode(
+      backupSaltFor(backupSaltVersion),
+    );
 
     if (backupKdfVersion === KDF_VERSION.ARGON2ID) {
       const keyBytes = await deriveKeyFromMnemonicArgon2(
@@ -1765,6 +1410,7 @@ export class MajikKey {
           "Failed to decrypt backup — invalid mnemonic or corrupted data",
         );
     } else {
+      // PBKDF2 backups predate salt versioning: always the legacy salt.
       const legacyKey = await MajikKey._deriveLegacyMnemonicKey(mnemonic);
       try {
         await crypto.subtle.decrypt(
@@ -1781,38 +1427,30 @@ export class MajikKey {
   }
 
   private static async _exportMnemonicBackup(
-    identity: MajikKeyIdentity,
+    identity: {
+      id: string;
+      fingerprint: string;
+      publicRaw: Uint8Array;
+      privateRaw: Uint8Array;
+    },
     mnemonic: string,
   ): Promise<string> {
-    if (!identity?.privateKey)
-      throw new MajikKeyError("Identity must have privateKey to export backup");
-
-    const anyPriv = identity.privateKey;
-    const anyPub = identity.publicKey;
-
-    const privRawBuf = anyPriv.raw.buffer.slice(
-      anyPriv.raw.byteOffset,
-      anyPriv.raw.byteOffset + anyPriv.raw.byteLength,
+    const mnemonicSalt = new TextEncoder().encode(
+      backupSaltFor(BACKUP_SALT_WRITE_VERSION),
     );
-
-    const pubRawBuf = anyPub.raw.buffer.slice(
-      anyPub.raw.byteOffset,
-      anyPub.raw.byteOffset + anyPub.raw.byteLength,
-    );
-
-    const mnemonicSalt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
     const keyBytes = await deriveKeyFromMnemonicArgon2(mnemonic, mnemonicSalt);
     const iv = generateRandomBytes(IV_LENGTH);
-    const ciphertext = aesGcmEncrypt(keyBytes, iv, new Uint8Array(privRawBuf));
+    const ciphertext = aesGcmEncrypt(keyBytes, iv, identity.privateRaw);
 
     return utf8ToBase64(
       JSON.stringify({
         id: identity.id,
         iv: arrayToBase64(iv),
         ciphertext: arrayToBase64(ciphertext),
-        publicKey: arrayBufferToBase64(pubRawBuf as ArrayBuffer),
+        publicKey: arrayToBase64(identity.publicRaw),
         fingerprint: identity.fingerprint,
         backupKdfVersion: KDF_VERSION.ARGON2ID,
+        backupSaltVersion: BACKUP_SALT_WRITE_VERSION,
       }),
     );
   }
@@ -1820,7 +1458,7 @@ export class MajikKey {
   private static async _deriveLegacyMnemonicKey(
     mnemonic: string,
   ): Promise<CryptoKey> {
-    const salt = new TextEncoder().encode(MAJIK_MNEMONIC_SALT);
+    const salt = new TextEncoder().encode(LEGACY_MAJIK_MNEMONIC_SALT);
     const keyMaterial = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(mnemonic),
@@ -1837,32 +1475,7 @@ export class MajikKey {
     );
   }
 
-  private static async _exportKeyToBase64(
-    key: CryptoKey | { raw: Uint8Array },
-  ): Promise<string> {
-    const anyKey: any = key;
-    if (anyKey?.raw instanceof Uint8Array)
-      return arrayBufferToBase64(anyKey.raw.buffer);
-    const raw = await crypto.subtle.exportKey("raw", key as CryptoKey);
-    return arrayBufferToBase64(raw);
-  }
-
   // ── WEB3 (EXPERIMENTAL) ─────────────────────────────────────────────────────
-
-  /**
-   * @experimental
-   */
-  getBtcSecretKey(): Uint8Array {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._btcSecretKey)
-      throw new MajikKeyError(
-        "No Bitcoin secret key — re-import via importFromMnemonicBackup() for full migration.",
-      );
-    return this._btcSecretKey;
-  }
-
-  // ── WEB3 (EXPERIMENTAL) — updated getter ────────────────────────────────────
 
   /**
    * @experimental
@@ -1872,9 +1485,22 @@ export class MajikKey {
 
     const solanaMaterial = this._getOrDeriveSolanaMaterial();
 
+    const btcSecret = this._store.peekSecretKey(KeyId.BTC);
     const btcMaterial: BitcoinKeypairMaterial | undefined =
-      this._btcSecretKey && this._btcPublicKey
-        ? { privateKey: this._btcSecretKey, publicKey: this._btcPublicKey }
+      btcSecret && this._store.has(KeyId.BTC)
+        ? {
+            privateKey: btcSecret,
+            publicKey: this._store.getPublicKey(KeyId.BTC),
+          }
+        : undefined;
+
+    const ethSecret = this._store.peekSecretKey(KeyId.ETH);
+    const ethMaterial: EthereumKeypairMaterial | undefined =
+      ethSecret && this._store.has(KeyId.ETH)
+        ? {
+            privateKey: ethSecret,
+            publicKey: this._store.getPublicKey(KeyId.ETH),
+          }
         : undefined;
 
     return {
@@ -1896,28 +1522,29 @@ export class MajikKey {
         sign: (hash: Uint8Array, scheme?: "ecdsa" | "schnorr") =>
           signWithBitcoinMaterial(btcMaterial, hash, scheme),
       },
+      ethereum: ethMaterial && {
+        publicKey: ethMaterial.publicKey,
+        privateKey: ethMaterial.privateKey,
+        address: ethereumAddressFromPublicKey(ethMaterial.publicKey),
+        getPrivateKeyHex: () => toEthereumPrivateKeyHex(ethMaterial),
+        signHash: (hash32: Uint8Array) => signEthereumHash(ethMaterial, hash32),
+        signMessage: (message: string | Uint8Array) =>
+          signEthereumMessage(ethMaterial, message),
+      },
     };
   }
 
-  // ── BITCON (EXPERIMENTAL)  ────────────────────────────────────
+  // ── BITCOIN (EXPERIMENTAL) ──────────────────────────────────────────────────
 
-  /**
-   * @experimental True if this MajikKey can currently produce Bitcoin
-   * material (i.e. it's unlocked and has a Bitcoin secret key).
-   */
+  /** @experimental True if this MajikKey can currently produce Bitcoin material (unlocked + has a Bitcoin key). */
   get hasBitcoinKeypair(): boolean {
-    return this.isUnlocked && this._btcSecretKey !== undefined;
+    return this._store.peekSecretKey(KeyId.BTC) !== undefined;
   }
 
   /**
-   * @experimental Raw Bitcoin keypair material. Pass `{ standard: true }` to
-   * get the REAL BIP-84 mainnet key (recoverable in any standard wallet from
-   * the mnemonic alone) instead of Majik's default domain-separated key.
-   *
-   * NOTE: `{ standard: true }` re-derives from the raw seed on demand and is
-   * NOT the same key as `web3.bitcoin` (which is always the stored,
-   * domain-separated default) — it requires the mnemonic to reproduce again
-   * outside Majik, whereas the stored default does not.
+   * @experimental Raw Bitcoin keypair material for the stored (domain-separated)
+   * key. The REAL BIP-84 key needs the mnemonic:
+   * use `MajikKey.deriveStandardBitcoinFromMnemonic(mnemonic)`.
    */
   getBitcoinKeypairMaterial(
     options?: BitcoinDerivationOptions,
@@ -1925,11 +1552,10 @@ export class MajikKey {
     if (this.isLocked)
       throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
     if (!options?.standard && !options?.path) {
-      if (!this._btcSecretKey || !this._btcPublicKey)
-        throw new MajikKeyError(
-          "No Bitcoin secret key — re-import via importFromMnemonicBackup() first.",
-        );
-      return { privateKey: this._btcSecretKey, publicKey: this._btcPublicKey };
+      return {
+        privateKey: this.getBtcSecretKey(),
+        publicKey: this._store.getPublicKey(KeyId.BTC),
+      };
     }
     throw new MajikKeyError(
       "Deriving the standard BIP-84 path requires the mnemonic — " +
@@ -1937,91 +1563,96 @@ export class MajikKey {
     );
   }
 
-  /**
-   * @experimental Derive the REAL BIP-84 mainnet Bitcoin keypair straight
-   * from a mnemonic — for one-off export/verification. Does not require
-   * an unlocked MajikKey instance.
-   */
+  /** @experimental Derive the REAL BIP-84 mainnet Bitcoin keypair straight from a mnemonic. */
   static async deriveStandardBitcoinFromMnemonic(
     mnemonic: string,
     mnemonicLanguage: MnemonicLanguage = "en",
   ): Promise<BitcoinKeypairMaterial> {
     MajikKeyValidator.validateMnemonic(mnemonic);
     const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
-
     if (!validateMnemonic(mnemonic, wordlist)) {
       throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
     }
-
     const seed = await mnemonicToSeed(mnemonic);
     return deriveBitcoinKeypairFromSeed(seed, { standard: true });
   }
 
-  /**
-   * @experimental WIF export of the default (domain-separated) Bitcoin key.
-   */
+  /** @experimental WIF export of the stored (domain-separated) Bitcoin key. */
   getBitcoinWIF(options?: { compressed?: boolean }): string {
-    const material = this.getBitcoinKeypairMaterial();
-    return toWIF(material, options);
+    return toWIF(this.getBitcoinKeypairMaterial(), options);
   }
 
-  // ── SOLANA (EXPERIMENTAL)  ────────────────────────────────────
+  // ── ETHEREUM (EXPERIMENTAL) ─────────────────────────────────────────────────
+
+  /** @experimental True if this account has a stored Ethereum key (works while locked). */
+  get hasEthereum(): boolean {
+    return this._store.has(KeyId.ETH);
+  }
 
   /**
-   * @experimental True if this MajikKey can currently produce a Solana
-   * keypair (i.e. it's unlocked and has an Ed25519 signing key).
+   * @experimental EIP-55 Ethereum address (standard m/44'/60'/0'/0/0 — the same
+   * address MetaMask shows for this mnemonic). Public-only, so it works while locked.
    */
+  getEthereumAddress(): string {
+    if (!this._store.has(KeyId.ETH))
+      throw new MajikKeyError(
+        "No Ethereum key — add it with addKeys([KeyId.ETH], mnemonic, passphrase).",
+      );
+    return ethereumAddressFromPublicKey(this._store.getPublicKey(KeyId.ETH));
+  }
+
+  /** @experimental Raw Ethereum keypair material. Requires an unlocked account. */
+  getEthereumKeypairMaterial(): EthereumKeypairMaterial {
+    return {
+      privateKey: this._requireSecret(KeyId.ETH),
+      publicKey: this._store.getPublicKey(KeyId.ETH),
+    };
+  }
+
+  /** @experimental 0x-prefixed private key hex, for wallet "import private key". */
+  getEthereumPrivateKeyHex(): string {
+    return toEthereumPrivateKeyHex(this.getEthereumKeypairMaterial());
+  }
+
+  // ── SOLANA (EXPERIMENTAL) ───────────────────────────────────────────────────
+
+  /** @experimental True if this MajikKey can currently produce a Solana keypair (unlocked + has Ed25519). */
   get hasSolanaKeypair(): boolean {
-    return this.isUnlocked && this._edSecretKey !== undefined;
+    return this._store.peekSecretKey(KeyId.ED25519) !== undefined;
   }
 
   private _getOrDeriveSolanaMaterial(): SolanaKeypairMaterial {
-    if (!this._edSecretKey)
+    const ed = this._store.peekSecretKey(KeyId.ED25519);
+    if (!ed)
       throw new MajikKeyError(
         "No Ed25519 secret key — MajikKey must be unlocked and have signing keys.",
       );
     if (!this._solanaKeypairMaterial) {
-      this._solanaKeypairMaterial = deriveSolanaKeypairFromEdSecretKey(
-        this._edSecretKey,
-      );
+      this._solanaKeypairMaterial = deriveSolanaKeypairFromEdSecretKey(ed);
     }
     return this._solanaKeypairMaterial;
   }
 
-  /**
-   * @experimental Raw Solana keypair material (public/secret key bytes).
-   * Pass `{ reuseMessageKey: true }` to reuse the MajikKey's message signing
-   * Ed25519 key directly instead of the domain-separated derivation.
-   */
+  /** @experimental Raw Solana keypair material. `reuseMessageKey: true` reuses the message-signing Ed25519 key. */
   getSolanaKeypairMaterial(options?: {
     reuseMessageKey?: boolean;
   }): SolanaKeypairMaterial {
-    if (this.isLocked)
-      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._edSecretKey)
-      throw new MajikKeyError(
-        "No Ed25519 secret key — re-import via importFromMnemonicBackup() first.",
-      );
-    if (options?.reuseMessageKey) {
-      return solanaMaterialFromEd25519SecretKey(this._edSecretKey);
-    }
+    const ed = this._requireSecret(
+      KeyId.ED25519,
+      "No Ed25519 secret key — add it with addKeys() (requires the mnemonic).",
+    );
+    if (options?.reuseMessageKey) return solanaMaterialFromEd25519SecretKey(ed);
     return this._getOrDeriveSolanaMaterial();
   }
 
-  /**
-   * @experimental Real @solana/kit Keypair instance. Lazily loads
-   * @solana/kit — throws a MajikKeyError with install instructions if
-   * it isn't present in the consuming project.
-   */
+  /** @experimental Real @solana/kit Keypair instance (lazy-loads @solana/kit). */
   async getSolanaKeypair(options?: {
     reuseMessageKey?: boolean;
   }): Promise<any> {
     return toSolanaKeyPairSigner(this.getSolanaKeypairMaterial(options));
   }
 
-  /**
-   * @experimental Base58 Solana address. Does NOT require @solana/kit.
-   */
+  /** @experimental Base58 Solana address. Does NOT require @solana/kit. */
   getSolanaAddress(options?: { reuseMessageKey?: boolean }): string {
     return solanaAddressFromPublicKey(
       this.getSolanaKeypairMaterial(options).publicKey,

@@ -1,4 +1,5 @@
 import { MnemonicLanguage } from "./crypto/wordlist";
+import { KeyEntryJSON } from "./keys/types";
 
 /** ISO 8601 timestamp string, e.g. `"2026-07-11T00:00:00.000Z"`. */
 export type ISODateString = string;
@@ -80,6 +81,11 @@ export interface MajikKeyJSON {
 
   /** BIP-39 wordlist language the original mnemonic was generated/validated against. Defaults to `"en"`. */
   mnemonicLanguage?: MnemonicLanguage;
+
+  /** Registry schema version. Absent on pre-registry JSON. */
+  keysVersion?: number;
+  /** Every keypair on the account (public key + passphrase-encrypted secret + derivation). */
+  keys?: KeyEntryJSON[];
 }
 
 /**
@@ -105,6 +111,9 @@ export interface MajikKeyDangerousJSON extends MajikKeyJSON {
   mlDsaSecretKeyBase64: string;
   /** @experimental ⚠️ Raw Bitcoin private key, base64. Unencrypted. */
   btcSecretKeyBase64?: string;
+
+  /** ⚠️ Raw secret of every stored key, base64, keyed by namespaced id. Unencrypted. */
+  secretKeys?: Record<string, string>;
 }
 
 /**
@@ -132,8 +141,13 @@ export interface MajikKeyMetadata {
     hasBitcoin?: boolean;
     /** @experimental `true` if this account can derive a Solana keypair (i.e. has an Ed25519 signing key and is unlocked). */
     hasSolana?: boolean;
+    /** @experimental `true` if this account has a stored Ethereum keypair. */
+    hasEthereum?: boolean;
   };
   mnemonicLanguage?: MnemonicLanguage;
+
+  /** Namespaced ids of every key available on the account. */
+  keys?: string[];
 }
 
 /**
