@@ -339,3 +339,7 @@ export class KeyStore {
     return out as LegacyKeyJSON;
   }
 }
+
+
+Object.freeze(KeyStore);
+Object.freeze(KeyStore.prototype);

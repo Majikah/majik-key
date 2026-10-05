@@ -44,6 +44,7 @@ describe("MajikKey Solana Integration (Experimental)", () => {
     mnemonic = await MajikKey.generateMnemonic(128, "en");
     majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, {
       mnemonicLanguage: "en",
+      keys: ["web3:sol"],
     });
   }, CRYPTO_TIMEOUT);
 
@@ -98,6 +99,7 @@ describe("MajikKey Solana Integration (Experimental)", () => {
           mnemonic,
           "AnotherPass!23",
           LABEL,
+          { keys: ["web3:sol"] },
         );
 
         const a = majikKey.getSolanaKeypairMaterial();
@@ -120,6 +122,7 @@ describe("MajikKey Solana Integration (Experimental)", () => {
           otherMnemonic,
           PASSPHRASE,
           LABEL,
+          { keys: ["web3:sol"] },
         );
 
         const a = majikKey.getSolanaKeypairMaterial();
@@ -151,7 +154,7 @@ describe("MajikKey Solana Integration (Experimental)", () => {
   describe("Domain separation from the message-signing Ed25519 key", () => {
     it("should NOT equal the raw message-signing Ed25519 keypair by default", () => {
       const solanaMaterial = majikKey.getSolanaKeypairMaterial();
-      const edPublicKey = majikKey.edPublicKey!;
+      const edPublicKey = majikKey.getPublicKey("classic:ed25519")!;
 
       expect(edPublicKey).toBeDefined();
       // The whole point of domain separation: the default Solana public key
@@ -164,7 +167,7 @@ describe("MajikKey Solana Integration (Experimental)", () => {
       const reused = majikKey.getSolanaKeypairMaterial({
         reuseMessageKey: true,
       });
-      const edPublicKey = majikKey.edPublicKey!;
+      const edPublicKey = majikKey.getPublicKey("classic:ed25519")!;
 
       expect(reused.publicKey).toEqual(edPublicKey);
     });

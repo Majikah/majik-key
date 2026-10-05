@@ -32,7 +32,7 @@ export async function base64ToKey(
 
 // utils/utilities.ts
 export function arrayToBase64(data: Uint8Array): string {
-  let binary = ".js";
+  let binary = "";
   const bytes = data;
   const len = bytes.byteLength;
 
@@ -49,7 +49,7 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  let binary = ".js";
+  let binary = "";
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));

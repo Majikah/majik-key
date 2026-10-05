@@ -10,9 +10,9 @@
  * New algorithms (phase 4) register here with the "hkdf-sha512-v1" recipe.
  * Derived views (web3:sol) are NOT stored keys and are not listed here.
  */
-import * as ed25519 from "@stablelib/ed25519";
+import * as ed25519 from "@stablelib/ed25519/ed25519.js";
 import ed2curve from "ed2curve";
-import { hash } from "@stablelib/sha256";
+import { hash } from "@stablelib/sha256/sha256.js";
 import {
   ml_kem512,
   ml_kem768,

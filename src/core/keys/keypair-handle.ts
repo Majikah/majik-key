@@ -56,3 +56,7 @@ export interface KeyInfo {
   /** Undefined for derived views while locked. */
   publicKeyBase64?: string;
 }
+
+
+Object.freeze(MajikKeypair);
+Object.freeze(MajikKeypair.prototype);

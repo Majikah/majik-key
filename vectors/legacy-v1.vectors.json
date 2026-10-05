@@ -1,0 +1,40 @@
+{
+    "_comment": "Frozen derivation vectors for legacy-v1 MajikKey. Mnemonic is the public BIP-39 test phrase (empty BIP-39 passphrase). NEVER regenerate to make a failing test pass.",
+    "mnemonic": "test test test test test test test test test test test junk",
+    "fingerprint": "T663tpuaXwfSx+h9qI5VykYonoD+howCzgaylpFCRc4=",
+    "classic:x25519": {
+        "publicKey": "YU9+xAl9I/e7GhgD0/2ybmKP/iFrQel8R9XyfREq9m0=",
+        "secretKeySha256": "BBjmDvodWxFKusZmr73M6u/55puEEuvlWX9HAkZltxI="
+    },
+    "classic:ed25519": {
+        "publicKey": "4SNc89MK6BlbxE3LXXr+fSM83MDCJQ1wYYDwn39kZlo=",
+        "secretKeySha256": "bVeX21l29jb64FOMlpD6/ry3f9USTM5aVjBr9Zvykag="
+    },
+    "pq:ml-kem-768": {
+        "publicKeyLength": 1184,
+        "publicKeySha256": "RyoXse/f3uJ9jqDkUAVbiW+lsKCsjZCJe8wkFKkdiKo=",
+        "secretKeyLength": 2400,
+        "secretKeySha256": "EXSyMXI2AQnyxg9ED7Ittqcb8IreTt4gl27SXzV1obQ="
+    },
+    "pq:ml-dsa-87": {
+        "publicKeyLength": 2592,
+        "publicKeySha256": "T0OwExJ4SmSdsiiqRuuwhyPVNTDxKVI6dq9buM9F2Oc=",
+        "secretKeyLength": 4896,
+        "secretKeySha256": "m5N4uH+JIwyHCCvACoBCPCPQ36wnT36Hb+juCn3RZLY="
+    },
+    "web3:btc": {
+        "path": "m/84'/1971'/0'/0/0",
+        "publicKey": "Ayf2iJyYSDV78tdzQIePzTkFzWiZILvmdkX8CuzTrQRG",
+        "secretKeySha256": "xhP4Y3Xs3CCCcRKKtt0GbUFT+pfCdEeAb6QPV7h6YkY="
+    },
+    "web3:sol": {
+        "publicKey": "wjBMGQ+w2Ggllztr6wE+unZigJPhCB4Ej00aQ6r+j68=",
+        "secretKeySha256": "S0q2O5RUVTMwpWRDRLENYeg7J3Q9ikQjE9jIawhHHis="
+    },
+    "web3:eth": {
+        "path": "m/44'/60'/0'/0/0",
+        "compressedPublicKey": "A4MYU1tUEF1Keq5gwI/EX5aHGBtP38YlvRp1P6c5f+11",
+        "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "secretKeySha256": "WYkclogd+899LdwnC3gT5mZpT7v/6N3Sc2v5HBsOhdQ="
+    }
+}

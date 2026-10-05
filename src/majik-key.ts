@@ -254,7 +254,7 @@ export class MajikKey {
     this._fingerprint = init.fingerprint;
     this._salt = init.salt;
     this._backup = init.backup;
-    this._label = init.label || ".js";
+    this._label = init.label || "";
     this._timestamp = init.timestamp || new Date();
     this._kdfVersion = init.kdfVersion ?? KDF_VERSION.PBKDF2;
     this._mnemonicLanguage = init.mnemonicLanguage || "en";
@@ -313,7 +313,7 @@ export class MajikKey {
   // ── Registry accessors ──────────────────────────────────────────────────────
 
   /** Is this key present on the account? Works while locked. Derived views (web3:sol) count when their source key exists. */
-  hasKey(id: string): boolean {
+  hasKey(id: KeyId): boolean {
     if (this._store.has(id)) return true;
     const def = getAlgorithm(id);
     return (
@@ -324,7 +324,7 @@ export class MajikKey {
     );
   }
 
-  hasKeys(ids: readonly string[]): boolean {
+  hasKeys(ids: readonly KeyId[]): boolean {
     return ids.every((id) => this.hasKey(id));
   }
 
@@ -399,14 +399,35 @@ export class MajikKey {
   }
 
   private _requireSecret(id: KeyId, missingMessage?: string): Uint8Array {
-    if (this.isLocked)
+    if (this.isLocked) {
       throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
-    if (!this._store.has(id))
+    }
+
+    const slot = this._store.slot(id);
+
+    if (!slot) {
       throw new MajikKeyError(
         missingMessage ??
           `No "${id}" key on this account — add it with addKeys(), which requires the mnemonic.`,
       );
-    return this._store.getSecretKey(id);
+    }
+
+    const secret = this._store.peekSecretKey(id);
+
+    if (!secret) {
+      if (id === KeyId.BTC) {
+        throw new MajikKeyError(
+          "Bitcoin private key material is unavailable; re-import via importFromMnemonicBackup.",
+        );
+      }
+
+      throw new MajikKeyError(
+        missingMessage ??
+          `Private key material for "${id}" is unavailable. Re-import the account from its mnemonic backup.`,
+      );
+    }
+
+    return secret;
   }
 
   // ── Deprecated per-algorithm getters (wrappers over the registry) ───────────
@@ -780,21 +801,46 @@ export class MajikKey {
     options: MajikKeyCreateOptions = {},
   ): Promise<MajikKey> {
     try {
-      const parsed: MnemonicJSON =
+      const parsed =
         typeof mnemonicJson === "string"
           ? JSON.parse(mnemonicJson)
           : mnemonicJson;
-      if (!parsed.id || !parsed.seed || !Array.isArray(parsed.seed))
+
+      if (
+        !parsed ||
+        !parsed.id ||
+        !Array.isArray(parsed.seed) ||
+        parsed.seed.length === 0
+      ) {
         throw new MajikKeyError("Invalid MnemonicJSON");
+      }
+
       const mnemonic = seedArrayToString(parsed.seed);
+
       MajikKeyValidator.validateMnemonic(mnemonic);
-      return await MajikKey.create(mnemonic, passphrase, label, options);
+
+      // Explicit caller option wins.
+      // Otherwise preserve the language embedded
+      // in the MnemonicJSON.
+      const mnemonicLanguage =
+        options.mnemonicLanguage ?? parsed.language ?? "en";
+
+      const wordlist = await MajikKey._getWordlist(mnemonicLanguage);
+
+      if (!validateMnemonic(mnemonic, wordlist)) {
+        throw new MajikKeyError("Invalid BIP39 mnemonic phrase");
+      }
+
+      return await MajikKey.create(mnemonic, passphrase, label, {
+        ...options,
+        mnemonicLanguage,
+      });
     } catch (err) {
-      if (err instanceof MajikKeyError) throw err;
-      throw new MajikKeyError(
-        "Failed to create MajikKey from MnemonicJSON",
-        err,
-      );
+      if (err instanceof MajikKeyError) {
+        throw err;
+      }
+
+      throw new MajikKeyError("Failed to import MnemonicJSON", err);
     }
   }
 
@@ -802,7 +848,7 @@ export class MajikKey {
 
   updateLabel(newLabel: string): this {
     MajikKeyValidator.validateLabel(newLabel);
-    this._label = newLabel || ".js";
+    this._label = newLabel || "";
     return this;
   }
 
@@ -1332,7 +1378,25 @@ export class MajikKey {
   private static async _getWordlist(
     language: MnemonicLanguage,
   ): Promise<string[]> {
+    const supported: MnemonicLanguage[] = [
+      "en",
+      "fr",
+      "es",
+      "it",
+      "ja",
+      "ko",
+      "czech",
+      "pt",
+      "zh-cn",
+      "zh-tw",
+    ];
+
+    if (!supported.includes(language as MnemonicLanguage)) {
+      throw new MajikKeyError(`Unsupported language: ${String(language)}`);
+    }
+
     const loader = WORDLISTS[language] ?? WORDLISTS.en;
+
     const mod = await loader();
     return mod.wordlist;
   }

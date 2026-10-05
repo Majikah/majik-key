@@ -1,8 +1,33 @@
 # Security Policy
 
-Majik Key handles private key material for the Majikah ecosystem. We take reports of security issues seriously and appreciate the work of anyone who takes the time to responsibly disclose one.
+This document describes the security model of `@majikah/majik-key`, what it does and does not guarantee, and how to report a vulnerability. It is written to match the actual implementation — if something here looks inconsistent with the code, please [report it](#reporting-a-vulnerability).
 
-This document covers how to report a vulnerability, what's in and out of scope, and an honest summary of the library's current security architecture and known limitations.
+---
+
+## Table of Contents
+
+- [Security Policy](#security-policy)
+  - [Table of Contents](#table-of-contents)
+  - [Reporting a Vulnerability](#reporting-a-vulnerability)
+  - [Security Model](#security-model)
+    - [What this library actually does](#what-this-library-actually-does)
+    - [Deterministic multi-key identity](#deterministic-multi-key-identity)
+    - [Encrypted key vault](#encrypted-key-vault)
+    - [Post-quantum coverage](#post-quantum-coverage)
+    - [Key derivation and domain separation](#key-derivation-and-domain-separation)
+    - [X25519 and Ed25519 relationship](#x25519-and-ed25519-relationship)
+    - [Recovery and compatibility](#recovery-and-compatibility)
+    - [Secret lifecycle and locking](#secret-lifecycle-and-locking)
+    - [Atomic state transitions](#atomic-state-transitions)
+  - [Scope](#scope)
+    - [In scope](#in-scope)
+    - [Out of scope](#out-of-scope)
+  - [Known Limitations \& Non-Goals](#known-limitations--non-goals)
+  - [Dependency \& Supply Chain](#dependency--supply-chain)
+  - [Secure Usage Guidelines](#secure-usage-guidelines)
+  - [Cryptographic Details](#cryptographic-details)
+  - [Disclosure Policy](#disclosure-policy)
+  - [Contact](#contact)
 
 ---
 
@@ -10,76 +35,416 @@ This document covers how to report a vulnerability, what's in and out of scope, 
 
 **Please do not open a public GitHub issue for security vulnerabilities.**
 
-Report privately by emailing:
+Report privately via:
 
-**business@majikah.solutions**
+**Email** — [business@majikah.solutions](mailto:business@majikah.solutions), preferably with `SECURITY` in the subject line.
 
-Please include, as applicable:
+Please include:
 
-- A description of the vulnerability and its potential impact
-- Steps to reproduce, or a minimal proof-of-concept
-- The affected version(s) or commit hash
-- Whether you believe the issue is in Majik Key itself, or in one of its dependencies
+* A description of the issue and its potential impact
+* Steps to reproduce, or a minimal proof-of-concept
+* The affected version(s), and whether the issue is in this package or a dependency
+* Whether the issue concerns the core key-management path, derivation, encrypted storage, recovery, or the experimental Web3 functionality
+* Any relevant runtime information (browser, Node.js, operating system, etc.)
 
-We will acknowledge receipt of your report as soon as we're able, and aim to keep you updated as we investigate. Response and remediation times depend on severity and complexity, so we can't commit to a fixed SLA here — if you need a specific timeline commitment for coordinated disclosure, say so in your initial report and we'll do our best to accommodate it.
+**This is an independently maintained project — response times are best-effort, not a contractual SLA.**
 
-We ask that you give us a reasonable opportunity to investigate and address a report before any public disclosure. We don't currently operate a paid bug bounty program.
+We aim to acknowledge reports as soon as reasonably possible, investigate in good faith, and prioritize confirmed issues according to severity and exploitability.
+
+We ask that reporters give us a reasonable opportunity to investigate and address an issue before public disclosure.
+
+We do not currently operate a paid bug bounty program.
 
 ---
 
-## Supported Versions
+## Security Model
 
-Majik Key is under active development. Until a formal LTS/support policy is published, please assume that **only the latest published version on npm** receives security fixes, and update accordingly. If you're running an older version and are unsure whether a known issue affects you, ask via the contact above.
+### What this library actually does
+
+Majik Key is a **deterministic cryptographic identity and key-management library**.
+
+A 12- or 24-word BIP-39 mnemonic acts as the root recovery secret. From that seed, Majik Key can deterministically derive a registry of classical, post-quantum, and experimental Web3 key material.
+
+The resulting private key material is encrypted at rest using **AES-256-GCM**, with an encryption key derived from the account passphrase using **Argon2id**.
+
+Majik Key is designed to provide:
+
+* Deterministic key generation and recovery
+* Multi-algorithm key management
+* Encrypted private-key storage
+* Post-quantum key support
+* Local-first key derivation
+* Password-protected account unlocking
+* Explicit secret lifecycle management
+* Backward-compatible account migration
+
+It does **not** provide a centralized recovery service, a master recovery key, or a guarantee that JavaScript memory can be cryptographically erased from a compromised process.
+
+### Deterministic multi-key identity
+
+Every new account contains the four core keypairs:
+
+| Key               | Algorithm  | Purpose                              |
+| ----------------- | ---------- | ------------------------------------ |
+| `classic:x25519`  | X25519     | Identity and classical key agreement |
+| `classic:ed25519` | Ed25519    | Classical signing                    |
+| `pq:ml-kem-768`   | ML-KEM-768 | Post-quantum key encapsulation       |
+| `pq:ml-dsa-87`    | ML-DSA-87  | Post-quantum signing                 |
+
+Additional algorithms can be explicitly requested through the key registry.
+
+Supported stable optional families include:
+
+* ML-KEM-512 / ML-KEM-1024
+* ML-DSA-44 / ML-DSA-65
+* SLH-DSA parameter sets
+
+Experimental support includes:
+
+* Falcon
+* Bitcoin
+* Ethereum
+* Solana
+
+The registry is designed so that adding another key does not alter the derivation of keys that already exist.
+
+### Encrypted key vault
+
+Majik Key's normal account representation does not persist private keys in plaintext.
+
+Stored secret material is encrypted with:
+
+* **AES-256-GCM**
+* A per-account vault key derived from the passphrase
+* **Argon2id**
+* A separate random IV for each stored key
+
+The current Argon2id configuration is:
+
+* **64 MB memory**
+* **3 iterations**
+* **4 parallel lanes**
+
+A WASM implementation is used through `hash-wasm` where available, with a pure-JavaScript fallback based on `@noble/hashes`.
+
+The fallback is intended to be bit-identical with the WASM implementation and does not intentionally weaken the KDF parameters.
+
+The vault key is derived once per operation and reused across the account's encrypted key entries rather than running a separate KDF for every algorithm.
+
+### Post-quantum coverage
+
+Majik Key includes NIST-standardized post-quantum algorithms alongside classical primitives:
+
+* **ML-KEM — FIPS 203**
+* **ML-DSA — FIPS 204**
+* **SLH-DSA — FIPS 205**
+
+The default account contains ML-KEM-768 and ML-DSA-87.
+
+This is a defense-in-depth and migration-ready design. It is **not** a claim that the classical algorithms are currently broken.
+
+SLH-DSA is stable but some `s` parameter sets are substantially slower in JavaScript and may block a browser UI thread. Applications using them should consider a Web Worker or equivalent isolated execution environment.
+
+Falcon support is explicitly experimental. The Falcon identifiers represent the Falcon submission rather than a finalized FN-DSA / FIPS 206 implementation.
+
+LMS/HSS is intentionally not supported because it is stateful and its signing-state requirements conflict with deterministic mnemonic recovery, backups, restores, and multi-device workflows.
+
+### Key derivation and domain separation
+
+Majik Key deterministically derives key material from the BIP-39 seed.
+
+The original core derivation recipes are frozen and protected by known-answer test vectors so that a future release does not silently change the keys produced from an existing mnemonic.
+
+Core derivation includes:
+
+| Key        | Derivation                                     |
+| ---------- | ---------------------------------------------- |
+| X25519     | Ed25519 key converted through `ed2curve`       |
+| Ed25519    | BIP-39 seed-derived                            |
+| ML-KEM-768 | Full 64-byte BIP-39 seed                       |
+| ML-DSA-87  | Domain-separated hash of the BIP-39 seed       |
+| Bitcoin    | BIP-32/84, Majik domain-separated path         |
+| Ethereum   | BIP-32/44, standard Ethereum path              |
+| Solana     | Domain-separated from the Ed25519 signing seed |
+
+Additional algorithms use a versioned **HKDF-SHA512** construction with a per-`KeyId` `info` value.
+
+This domain separation is important: optional algorithms are not intended to receive the same underlying seed material directly, and adding an algorithm must not modify an existing algorithm's derivation.
+
+Each stored key also records its derivation recipe in the serialized registry.
+
+### X25519 and Ed25519 relationship
+
+The X25519 identity/encryption key is derived by converting the account's Ed25519 key through `ed2curve`.
+
+This is intentional and part of the frozen legacy derivation model.
+
+Therefore, X25519 and Ed25519 should **not** be treated as independently generated random keypairs. They have a deterministic cryptographic relationship established by the conversion.
+
+Applications requiring independent key provenance between those protocol roles should account for this design explicitly.
+
+### Recovery and compatibility
+
+The mnemonic is the root recovery secret.
+
+Re-importing the same mnemonic reproduces the same deterministic account identity and key material, subject to the selected key set and documented derivation rules.
+
+This provides a deliberately simple recovery model:
+
+**mnemonic → deterministic keys → encrypted local account**
+
+Legacy accounts remain readable where supported.
+
+In particular:
+
+* Older JSON formats can be loaded and upgraded in memory
+* Legacy PBKDF2-protected accounts remain unlockable
+* `migrate()` can move legacy accounts to Argon2id
+* Existing accounts can be extended with missing algorithms through `addKeys()`
+* Older core keys retain their frozen derivation recipes
+* Newer serialized registry entries are preserved during round-trips rather than silently discarded
+
+`addKeys()` requires both the account's mnemonic and its current passphrase. The mnemonic must reproduce the account identity/fingerprint, while the passphrase must authenticate the encrypted account.
+
+### Secret lifecycle and locking
+
+`lock()` is intended to minimize the lifetime of secret material in memory.
+
+It:
+
+* Removes secret material from the active account state
+* Zeroizes secret buffers in place where the runtime permits
+* Clears cached secret Web3 material
+* Prevents private-key access until the account is unlocked again
+
+`withAutoLock()` provides a scoped mechanism that re-locks the account after an operation completes, including when the operation throws.
+
+Registry key handles are live views into the account rather than permanent copies of private key material. After locking, private access through the handle fails instead of returning stale key material.
+
+Public-key access remains available when it does not require private material.
+
+### Atomic state transitions
+
+Security-sensitive account operations are designed to behave atomically.
+
+In particular:
+
+* `unlock()` either succeeds completely or leaves the account locked
+* `updatePassphrase()` validates and decrypts existing material before committing the new encrypted state
+* `migrate()` completes the KDF transition before committing the new account representation
+* Failed transitions should not leave a partially migrated mixture of salts, ciphertext, or KDF versions
+
+This is intended to reduce the chance of partially applied security-state changes corrupting the account.
 
 ---
 
 ## Scope
 
-**In scope:**
-- The `@majikah/majik-key` package itself: key derivation, encryption/decryption logic, KDF implementation, serialization formats, and the public API surface.
-- Misuse-resistant design issues — e.g. an API that makes it easy to accidentally leak key material.
+### In scope
 
-**Out of scope (but still worth reporting responsibly if found):**
-- Vulnerabilities in upstream dependencies (`@scure/bip39`, `@noble/*`, `@stablelib/*`, `hash-wasm`, `ed2curve`, etc.) — please also report these upstream.
-- Vulnerabilities in the optional Web3 peer dependencies (`@scure/btc-signer`, `@solana/kit`).
-- Issues that require an already-compromised runtime (e.g. a malicious browser extension with full page access, or a rooted/jailbroken device with a compromised OS) to exploit. We're still interested in hearing about these, but they're a different risk class than a flaw in this library's own logic.
-- Social engineering, or vulnerabilities in downstream applications that misuse the API in ways the documentation explicitly warns against (see "Known Limitations" below).
+* Key generation and deterministic derivation
+* BIP-39 mnemonic validation and seed handling
+* Key registry and `KeyId` handling
+* X25519 and Ed25519 derivation and storage
+* ML-KEM and ML-DSA key derivation and storage
+* SLH-DSA key handling
+* Experimental Falcon key handling
+* AES-256-GCM encryption/decryption of stored private key material
+* Argon2id KDF implementation and configuration
+* Legacy PBKDF2 compatibility and migration
+* Serialization/deserialization and registry persistence
+* `toJSON()` / `fromJSON()`
+* `exportMnemonicBackup()` / `importFromMnemonicBackup()`
+* `toMnemonicJSON()` / `fromMnemonicJSON()`
+* `toDangerousJSON()` / `fromDangerousJSON()`
+* `lock()` / `unlock()`
+* `verify()`
+* `updatePassphrase()`
+* `migrate()`
+* `addKeys()`
+* `withAutoLock()`
+* Secret-buffer lifecycle and zeroization behavior
+* Deterministic recovery guarantees
+* Derivation domain separation
+* Public/private registry access
+* Experimental Bitcoin functionality
+* Experimental Ethereum functionality
+* Experimental Solana functionality
+* Security-relevant serialization or API design issues
+* Vulnerabilities that can cause unauthorized private-key disclosure or incorrect key derivation
+* Vulnerabilities that cause an attacker to obtain a valid private key or otherwise bypass the account's intended security boundaries
+
+### Out of scope
+
+* Vulnerabilities entirely contained inside upstream dependencies such as `@noble/*`, `@noble/post-quantum`, `@stablelib/*`, `@scure/bip39`, `hash-wasm`, `ed2curve`, or other third-party libraries
+* Vulnerabilities in optional Web3 peer dependencies such as `@scure/btc-signer` or `@solana/kit`
+* Applications that misuse the documented API in an explicitly unsafe manner
+* Social engineering
+* Attacks that require arbitrary code execution or unrestricted memory access in the same process
+* Malicious browser extensions that already have full page privileges
+* Rooted or jailbroken operating systems with unrestricted process inspection
+* Loss of a mnemonic where the library is operating as documented
+* Weak user-selected passphrases where no cryptographic bypass is involved
+
+Upstream and platform issues may still be worth reporting because they can affect the overall security of an application using Majik Key.
 
 ---
 
-## Security Architecture Summary
+## Known Limitations & Non-Goals
 
-For full detail, see the [README](./README.md). Short version, for anyone triaging a report:
+Documented honestly, so you can design around them:
 
-- **Encryption at rest, not hashing.** Private keys (X25519, ML-KEM-768, Ed25519, ML-DSA-87, and the default Bitcoin key) are never stored in plaintext. Each is encrypted with **AES-256-GCM**, using a key derived from the account passphrase via **Argon2id** (64 MB memory / 3 iterations / 4 parallel lanes).
-- **Argon2id implementation.** WASM-accelerated (`hash-wasm`) when available in the runtime, with an automatic fallback to a pure-JS implementation (`@noble/hashes`) if WASM is unavailable or fails at runtime. Output is bit-identical between the two, so this fallback never silently weakens the derived key.
-- **Legacy KDF (v1).** Older accounts encrypted with PBKDF2-SHA256 can still be unlocked for backward compatibility. New accounts, and any account whose passphrase is changed, are always encrypted under Argon2id (v2). If you're auditing an account, check `kdfVersion`/`isArgon2id` before assuming the stronger KDF is in use.
-- **Post-quantum posture.** ML-KEM-768 (FIPS-203) and ML-DSA-87 (FIPS-204) are included alongside their classical counterparts (X25519, Ed25519) on every new account. This is a defense-in-depth posture against future quantum attacks on the classical primitives, not a claim that the classical primitives are currently broken.
-- **No network calls during key generation or derivation.** Everything is computed locally, verifiable directly in source.
-- **One Ed25519 keypair, two roles.** The account's X25519 identity/encryption key is derived by converting the same Ed25519 keypair used for message signing (via `ed2curve`), not generated independently. This is an intentional design choice, not a bug — but it means the two roles are not cryptographically independent of each other, only domain-separated by the conversion.
+* **No guaranteed JavaScript memory erasure.** `lock()` zeroizes buffers where possible, but JavaScript runtimes cannot guarantee that every historical copy of secret material has disappeared from memory. Garbage collection, runtime copies, JIT behavior, debugging facilities, swap, and operating-system behavior can all defeat absolute erasure guarantees.
+
+* **The mnemonic is the master secret.** Anyone who obtains the mnemonic can deterministically reproduce the account's keys. There is no centralized recovery key, backdoor, or administrator override.
+
+* **A passphrase does not replace the mnemonic.** The passphrase protects the encrypted account representation. It is not an alternative recovery secret for a lost mnemonic.
+
+* **Weak passphrases remain weak.** Argon2id raises the cost of offline guessing, but it cannot create entropy that was not present in the original passphrase.
+
+* **`toMnemonicJSON()` is plaintext.** It contains the mnemonic and may contain the supplied passphrase. It is a transport/recovery format, not secure persistent storage.
+
+* **`toDangerousJSON()` bypasses encryption.** It contains raw private-key material and reconstructs an already-unlocked account. It exists for tightly controlled server-side secret injection and is not intended as a backup or normal persistence format.
+
+* **Web3 functionality is experimental.** Bitcoin, Ethereum, and Solana support has a different maturity level from the core key-management functionality and should be independently reviewed before production custody of valuable assets.
+
+* **Standard wallet paths reduce protocol isolation.** Ethereum uses the standard BIP-44 Ethereum path. Majik Key also exposes a standard BIP-84 Bitcoin derivation helper. Those paths improve interoperability but mean the resulting keys are directly controlled by the mnemonic just as they are in other compatible wallets.
+
+* **The default Bitcoin path is Majik-specific.** The stored Bitcoin key uses `m/84'/1971'/0'/0/0`, not the standard BIP-84 mainnet wallet path. Applications must not assume those two derivations produce the same address.
+
+* **Solana protocol separation can be disabled.** The recommended Solana derivation is domain-separated from the Ed25519 signing key. An explicit option exists to reuse the message-signing Ed25519 key directly; doing so removes that protocol separation and is not recommended.
+
+* **Optional algorithms have different maturity levels.** ML-KEM, ML-DSA, and SLH-DSA are standardized, while Falcon is experimental. Algorithms should be selected according to the application's actual security and interoperability requirements rather than simply choosing the largest available parameter set.
+
+* **No independent public security audit.** Majik Key has not undergone a public independent third-party security audit as of this writing. Code review, adversarial testing, and known-answer vectors are not equivalent to a formal external cryptographic audit.
+
+* **No cryptographic guarantee against a compromised host.** If an attacker already controls the process, the operating system, or the user's runtime with sufficient privilege, Majik Key cannot provide a meaningful confidentiality boundary for keys while they are in use.
+
+* **Pre-1.0 API stability.** Until `1.0.0`, minor releases may include breaking changes, including changes to experimental or security-relevant APIs. Review release notes carefully when upgrading.
 
 ---
 
-## Known Limitations & Honest Caveats
+## Dependency & Supply Chain
 
-We'd rather you read this here than discover it the hard way:
+Majik Key delegates cryptographic primitives to established third-party libraries rather than implementing the underlying algorithms from scratch.
 
-- **JavaScript cannot guarantee memory is wiped.** `lock()` drops references to decrypted key material so it becomes eligible for garbage collection, but this library cannot force immediate, guaranteed erasure of that memory (no `mlock`-equivalent, no guaranteed zeroing). Treat `lock()` as "best-effort minimization of exposure window," not as a hard security boundary against, e.g., a memory-dumping attacker who is already running arbitrary code in the same process.
-- **`toMnemonicJSON()` is a plaintext export, not a safe-storage format.** Unlike `toJSON()`/`toString()` (which never contain raw key material), `toMnemonicJSON()` embeds the raw mnemonic words — and, if supplied, the passphrase — in plaintext. It exists as a transport convenience, not an at-rest format. Storing its output unencrypted is equivalent to storing the mnemonic itself unencrypted.
-- **`toDangerousJSON()` / `fromDangerousJSON()` skip encryption entirely by design.** No KDF, no AES-GCM — instant reconstruction of a fully unlocked key from raw bytes. This exists for one narrow, intentional use case: injecting a pre-unlocked signing key into a trusted server process from a secrets manager at boot. It is not intended for anything that touches a client, a database, a log, or the network. Misuse of this API is a design trade-off we've made deliberately, not a bug — but we're glad to hear feedback on it.
-- **Web3 (Bitcoin/Solana) support is explicitly experimental.** The `web3` namespace, its Bitcoin/Solana derivation paths, and related methods are marked `@experimental` throughout the codebase and may change without a major version bump. Bitcoin key derivation happens by default on every new account (BIP-32/84, domain-separated path); Solana key material is derived on demand from the Ed25519 signing key. If you're relying on either for production custody of real funds, review the derivation paths and threat model carefully — this code has had less scrutiny than the core identity/signing/encryption paths.
-- **This library has not undergone a public, independent third-party security audit as of this writing.** If that changes, this section will be updated with a link to the report. Until then, treat the cryptographic design as reviewed by the maintainers and the open-source community, not as formally audited.
-- **Passphrase strength is the caller's responsibility.** Argon2id makes brute-forcing a weak passphrase slower, not impossible. This library validates passphrase presence/format but cannot enforce entropy — choose (or require your users to choose) a strong, unique passphrase.
-- **A lost mnemonic is unrecoverable, by design.** There is no backdoor, master key, or recovery mechanism. This is the intended security model for a self-custodial identity library, but it means user error (losing the mnemonic) has the same practical outcome as a successful attack (permanent loss of access).
+| Dependency                          | Role                                                        |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `@scure/bip39`                      | BIP-39 mnemonic generation and validation                   |
+| `@noble/post-quantum`               | ML-KEM, ML-DSA, and related PQ primitives                   |
+| `@noble/hashes`                     | Hashing, HKDF, and pure-JavaScript cryptographic support    |
+| `hash-wasm`                         | WASM-accelerated Argon2id implementation                    |
+| `ed2curve`                          | Ed25519 ↔ X25519 conversion                                 |
+| `@stablelib/*`                      | Supporting classical cryptographic functionality where used |
+| `@scure/btc-signer` (optional peer) | Bitcoin-native address / PSBT functionality                 |
+| `@solana/kit` (optional peer)       | Solana-native signer and address functionality              |
+
+The exact dependency set may change between releases. The package lockfile and published package metadata are the authoritative dependency sources for a particular release.
+
+Majik Key does not independently reimplement the underlying mathematical primitives above. Vulnerabilities in those primitives should generally be reported upstream as well as to us, because fixing such an issue may require updating the corresponding dependency.
+
+Because supply-chain compromise can occur without a vulnerability in Majik Key's own source, users should:
+
+* Keep dependencies updated
+* Review npm security advisories
+* Audit their own lockfiles regularly
+* Pin dependencies appropriately for security-sensitive deployments
+* Verify the provenance of production artifacts where applicable
 
 ---
 
-## Coordinated Disclosure
+## Secure Usage Guidelines
 
-We follow standard coordinated disclosure practice: we ask for the opportunity to investigate and ship a fix before any details are made public, and we're happy to credit reporters (by name, handle, or anonymously — your choice) in release notes once a fix ships, unless you'd prefer not to be mentioned at all.
+The most important rules:
 
-Thank you for helping keep Majik Key and the Majikah ecosystem safe.
+* ✅ Back up the **mnemonic offline**. It is the master recovery secret for the entire deterministic identity.
+
+* ✅ Use `toJSON()` / `toString()` for normal persistent account storage.
+
+* ✅ Call `key.lock()` as soon as practical after signing, decrypting, or otherwise using private key material.
+
+* ✅ Prefer `MajikKey.withAutoLock()` for bounded operations where possible so a thrown error does not leave the account unlocked.
+
+* ✅ Use the registry APIs such as `getPublicKey()`, `getPrivateKey(id)`, and `getKeypair(id)` rather than relying on deprecated per-algorithm accessors.
+
+* ✅ Add only the algorithms actually required by the application. Every stored private key increases the amount of secret material that must be protected.
+
+* ✅ Treat Bitcoin, Ethereum, and Solana functionality as experimental until your application's complete Web3 threat model has been reviewed.
+
+* ✅ Treat the mnemonic and all dangerous exports as equivalent to full account compromise.
+
+* ❌ Never log a mnemonic, private key, WIF, Ethereum private key, raw secret-key bytes, `secretKeys`, `toMnemonicJSON()` output, or `toDangerousJSON()` output.
+
+* ❌ Never store `toMnemonicJSON()` output unencrypted as ordinary application data.
+
+* ❌ Never use `toDangerousJSON()` as a backup, database record, client-side persistence format, or general transport format.
+
+* ❌ Never assume `lock()` provides guaranteed forensic destruction of every historical copy of key material from JavaScript memory.
+
+* ❌ Do not assume that an Ethereum or standard BIP-84 Bitcoin address has Majik-specific wallet isolation. Those are standard wallet derivation paths controlled by the mnemonic.
+
+* ❌ Do not reuse a funded mnemonic in untrusted applications or environments merely because the application uses Majik Key.
 
 ---
 
-**Contact:** [business@majikah.solutions](mailto:business@majikah.solutions)
+## Cryptographic Details
+
+| Property                             | Value                                          |
+| ------------------------------------ | ---------------------------------------------- |
+| Root identity material               | BIP-39 mnemonic, 128-bit or 256-bit entropy    |
+| Current KDF                          | Argon2id                                       |
+| Argon2id memory                      | 64 MB                                          |
+| Argon2id iterations                  | 3                                              |
+| Argon2id parallel lanes              | 4                                              |
+| Legacy KDF                           | PBKDF2-SHA256 (v1)                             |
+| Stored-key encryption                | AES-256-GCM                                    |
+| Per-key IV                           | Random, stored with the encrypted key material |
+| Classical encryption / key agreement | X25519                                         |
+| Classical signature                  | Ed25519                                        |
+| Post-quantum KEM                     | ML-KEM-768 (NIST FIPS-203)                     |
+| Post-quantum signature               | ML-DSA-87 (NIST FIPS-204)                      |
+| Additional PQ KEMs                   | ML-KEM-512 / ML-KEM-1024                       |
+| Additional PQ signatures             | ML-DSA-44 / ML-DSA-65                          |
+| Hash-based signatures                | SLH-DSA (NIST FIPS-205)                        |
+| Experimental signatures              | Falcon                                         |
+| Optional-key derivation              | HKDF-SHA512, versioned/domain-separated        |
+| X25519 relationship                  | Ed25519-derived via `ed2curve`                 |
+| Bitcoin stored derivation            | BIP-32/84, `m/84'/1971'/0'/0/0`                |
+| Bitcoin standard-wallet helper       | BIP-84 mainnet derivation                      |
+| Ethereum derivation                  | BIP-44, `m/44'/60'/0'/0/0`                     |
+| Solana default derivation            | Domain-separated from Ed25519 signing material |
+
+Legacy core derivation recipes are frozen and protected by known-answer test vectors.
+
+The registry additionally records derivation metadata for stored keys so that derivation schemes can evolve without silently changing previously established identities.
+
+---
+
+## Disclosure Policy
+
+We follow a **coordinated disclosure** approach:
+
+1. You report privately, per [Reporting a Vulnerability](#reporting-a-vulnerability).
+
+2. We reproduce the issue, assess its severity and affected versions, and work on a fix or mitigation without public disclosure.
+
+3. Once a fix or mitigation is published, we credit the reporter if they wish to be credited.
+
+4. Disclosure timing is coordinated in good faith. We ask that researchers give us a reasonable opportunity to address confirmed issues before publishing technical details.
+
+5. If a report remains unacknowledged for an extended period despite reasonable good-faith attempts to contact us, responsible public disclosure may be appropriate. We would rather support responsible disclosure than have a serious vulnerability remain indefinitely undisclosed because of communication delays.
+
+We do not currently operate a paid bug bounty program.
+
+---
+
+## Contact
+
+* **Security reports**: [business@majikah.solutions](mailto:business@majikah.solutions) (subject: `SECURITY`)
+* **Project documentation**: [README](./README.md)
+* **License**: [Apache-2.0](./LICENSE)
+* **Maintainer**: Josef Elijah Fabian / Zelijah
+
+---
+
+Thank you for helping keep Majik Key and the Majikah ecosystem secure.

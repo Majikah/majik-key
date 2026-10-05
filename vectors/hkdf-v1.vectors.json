@@ -1,0 +1,112 @@
+{
+    "_comment": "Frozen hkdf-sha512-v1 vectors (recipe in src/core/keys/hkdf-recipe.ts). Same public test mnemonic as legacy-v1. NEVER regenerate to make a failing test pass.",
+    "mnemonic": "test test test test test test test test test test test junk",
+    "pq:ml-kem-512": {
+        "publicKeyLength": 800,
+        "secretKeyLength": 1632,
+        "publicKeySha256": "AMyh01C8hu8X9+40lkZVeEgZS4m4+xFiQB0pE9Sf0O8=",
+        "secretKeySha256": "/u2KOeIXvRLCCmHUeevwo7PZFo5oVyQdNjY3/bKBFPU="
+    },
+    "pq:ml-kem-1024": {
+        "publicKeyLength": 1568,
+        "secretKeyLength": 3168,
+        "publicKeySha256": "PF1DePKgONNWd+MJs5t1uf+xrnnHkjtAoDsGa0NHUB8=",
+        "secretKeySha256": "HTvAZiK57oPGGG0l81FPREav4HHUqEae6N5grLqjUxw="
+    },
+    "pq:ml-dsa-44": {
+        "publicKeyLength": 1312,
+        "secretKeyLength": 2560,
+        "publicKeySha256": "qjSzjfs9SjKHQdQilDi+zQmAdRU+611om8oCgQxE5dE=",
+        "secretKeySha256": "4AuycR8o3g08zrvOGa+Q3xQEJHRg8FbwUUk336ZcXcY="
+    },
+    "pq:ml-dsa-65": {
+        "publicKeyLength": 1952,
+        "secretKeyLength": 4032,
+        "publicKeySha256": "+j3QID/7i1J1vhniuAk0DXfD+LoaUq/GggteWHDKjiA=",
+        "secretKeySha256": "ASmPqxCrcs4UTVZbfbIsTz3naruMzzFmMrgt600dJiQ="
+    },
+    "pq:slh-dsa-sha2-128s": {
+        "publicKeyLength": 32,
+        "secretKeyLength": 64,
+        "publicKeySha256": "LOQe44tGYFWfwMfebFalhMb+4YttfI/hfn/RUfrhiRg=",
+        "secretKeySha256": "LyC04ov9LsCQLoEqKxtkmb6a9v9v17lQOUfv5iwVq+k="
+    },
+    "pq:slh-dsa-sha2-128f": {
+        "publicKeyLength": 32,
+        "secretKeyLength": 64,
+        "publicKeySha256": "ffmwyDh3Z2Uzj6lLAq84ul8+JKav2IB06trhufSixBw=",
+        "secretKeySha256": "IEoRJKx1zGaEmzXx8bunskCX8cenDyTbWTV3cHI+9iY="
+    },
+    "pq:slh-dsa-sha2-192s": {
+        "publicKeyLength": 48,
+        "secretKeyLength": 96,
+        "publicKeySha256": "IKj37CRZ3lrcXZO9klO4S8rqAA3G01pILLHL7shx6ng=",
+        "secretKeySha256": "kVO1BEtBgZoq05Ag84PuCJlxFSkn0vhZHa1aRjhr9rA="
+    },
+    "pq:slh-dsa-sha2-192f": {
+        "publicKeyLength": 48,
+        "secretKeyLength": 96,
+        "publicKeySha256": "dMyAQrv9BqmvBU4QFq7TAmv9N35mFRM/N8TKv+uZN3g=",
+        "secretKeySha256": "JqhDR/WDEwe57VkpBm/gg+PSuNgRZ0Wrylhm53fSmtI="
+    },
+    "pq:slh-dsa-sha2-256s": {
+        "publicKeyLength": 64,
+        "secretKeyLength": 128,
+        "publicKeySha256": "NTLI5No4gNIEL0cCY2IBhfXuTtE9xZp0f5tDrt7Yr0M=",
+        "secretKeySha256": "DUEIUxfDi83nnqVmvZqZXWFM8xtaWCVW2ri42SwTFzM="
+    },
+    "pq:slh-dsa-sha2-256f": {
+        "publicKeyLength": 64,
+        "secretKeyLength": 128,
+        "publicKeySha256": "mEHxFSj0Y3dKQVlDGJaVf1wWoYlc+s3HOQiUQI2au9g=",
+        "secretKeySha256": "vIzllAhcF0VKJUxEZHKZ0GchZYdcq6JOnwa3X4h46Mw="
+    },
+    "pq:slh-dsa-shake-128s": {
+        "publicKeyLength": 32,
+        "secretKeyLength": 64,
+        "publicKeySha256": "1OZNRhX6LqxknGtP5PDjfdpXJAVOuGGXfKYYcfUVXac=",
+        "secretKeySha256": "gwICvHnTG75qCdi66oubmmsmLHxz+PTQjYOYsAmtvXI="
+    },
+    "pq:slh-dsa-shake-128f": {
+        "publicKeyLength": 32,
+        "secretKeyLength": 64,
+        "publicKeySha256": "YI6c1K1WvvsPqAXyl9KK+O3jyRl2baxN8W6LxMF2/XM=",
+        "secretKeySha256": "b5Y2wU1THIkE1/TWsV/z165xxI4a86jFay4UAqeug24="
+    },
+    "pq:slh-dsa-shake-192s": {
+        "publicKeyLength": 48,
+        "secretKeyLength": 96,
+        "publicKeySha256": "/3GYMjqGkBLOc6PXz3FlRHpfdIyYh7WvTaLz9XjvPyM=",
+        "secretKeySha256": "KL3npXiwRtrhPVwpR/BQMipfytRdaEx9odvKi6VmjT4="
+    },
+    "pq:slh-dsa-shake-192f": {
+        "publicKeyLength": 48,
+        "secretKeyLength": 96,
+        "publicKeySha256": "Oj+rEXlOhLtJ5a12wRSiIeNdG3m34PdN/3XjeVTMgPE=",
+        "secretKeySha256": "ekvz2nnFFR5SwuaZbWYtM1NdS99e4WUMDBfL2EWRgEY="
+    },
+    "pq:slh-dsa-shake-256s": {
+        "publicKeyLength": 64,
+        "secretKeyLength": 128,
+        "publicKeySha256": "aVp+MH6bed7BME+EQBaafezd0pu/AQ+5ztgDjRFx/dU=",
+        "secretKeySha256": "0SuqMcOHefprlhqJtv3OQ5lNehzTVbMk2TrgctD4v2s="
+    },
+    "pq:slh-dsa-shake-256f": {
+        "publicKeyLength": 64,
+        "secretKeyLength": 128,
+        "publicKeySha256": "mW9yZWUMwv50EXWRdZcRUrBkSbaRR2bjYkYolwIz6fU=",
+        "secretKeySha256": "YETJYVKYvMyCrrVHTw/cT6l6kkRiHoU9oQt7bss+gP4="
+    },
+    "pq:falcon-512": {
+        "publicKeyLength": 897,
+        "secretKeyLength": 1281,
+        "publicKeySha256": "KWk70cRabMxzGbdOVQ9f5I80LR2OuhtlQlPsLjkiOL8=",
+        "secretKeySha256": "ZkGOyqI3Ml5Z+6BB8Wnyl8Ft3I9QC/dElqxvpRzb3uQ="
+    },
+    "pq:falcon-1024": {
+        "publicKeyLength": 1793,
+        "secretKeyLength": 2305,
+        "publicKeySha256": "agg4LUhkxKM9yviMTzzzTGkGFTALYldcyo0jkWZ+T/8=",
+        "secretKeySha256": "rNM5J1QpMYyKkuuAvWvWwg15cMWIxzCKjEl2VxLk12k="
+    }
+}

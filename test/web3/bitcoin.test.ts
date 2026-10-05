@@ -22,7 +22,7 @@
 // timed beforeAll() setup rather than re-deriving a key per test.
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { MajikKey } from "../../src/majik-key";
+import { KeyId, MajikKey } from "../../src/majik-key";
 import { base58Encode } from "../../src/core/web3/utils";
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
 
@@ -46,20 +46,21 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
     mnemonic = await MajikKey.generateMnemonic(128, "en");
     majikKey = await MajikKey.create(mnemonic, PASSPHRASE, LABEL, {
       mnemonicLanguage: "en",
+      keys: ["web3:btc"],
     });
   }, CRYPTO_TIMEOUT);
 
   // ── AVAILABILITY / STATE CHECKS ──────────────────────────────────────────
-  describe("hasBitcoin vs hasBitcoinKeypair", () => {
-    it("hasBitcoin should be true as soon as the key is created (public key only, no unlock required)", () => {
-      expect(majikKey.hasBitcoin).toBe(true);
-      expect(majikKey.btcPublicKey).toBeInstanceOf(Uint8Array);
-      expect(majikKey.btcPublicKey?.length).toBe(33); // compressed secp256k1
+  describe("hasBitcoinKeypair vs hasBitcoinKeypair", () => {
+    it("hasBitcoinKeypair should be true as soon as the key is created (public key only, no unlock required)", () => {
+      expect(majikKey.hasBitcoinKeypair).toBe(true);
+      expect(majikKey.getKeypair("web3:btc").public).toBeInstanceOf(Uint8Array);
+      expect(majikKey.getKeypair("web3:btc")?.public.length).toBe(33); // compressed secp256k1
     });
 
-    it("hasBitcoin should remain true even after locking (it's the public key, not the secret)", () => {
+    it("hasBitcoinKeypair should remain true even after locking (it's the public key, not the secret)", () => {
       majikKey.lock();
-      expect(majikKey.hasBitcoin).toBe(true);
+      expect(majikKey.hasKey("web3:btc")).toBe(true);
     });
 
     it("hasBitcoinKeypair should be false once locked (requires the decrypted secret key)", () => {
@@ -110,6 +111,7 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
           mnemonic,
           "AnotherPass!23",
           LABEL,
+          { keys: ["web3:btc"] },
         );
 
         const a = majikKey.getBitcoinKeypairMaterial();
@@ -132,6 +134,7 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
           otherMnemonic,
           PASSPHRASE,
           LABEL,
+          { keys: ["web3:btc"] },
         );
 
         const a = majikKey.getBitcoinKeypairMaterial();
@@ -456,7 +459,9 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
       expect(() => majikKey.getBitcoinKeypairMaterial()).toThrow(
         /MajikKey is locked/,
       );
-      expect(() => majikKey.getBtcSecretKey()).toThrow(/MajikKey is locked/);
+      expect(() => majikKey.getPrivateKey("web3:btc")).toThrow(
+        /MajikKey is locked/,
+      );
       expect(majikKey.hasBitcoinKeypair).toBe(false);
       expect(majikKey.web3).toBeUndefined();
     });
@@ -474,7 +479,7 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
   describe("getBtcSecretKey", () => {
     it("should return the same 32-byte private key exposed via getBitcoinKeypairMaterial", () => {
       const material = majikKey.getBitcoinKeypairMaterial();
-      expect(majikKey.getBtcSecretKey()).toEqual(material.privateKey);
+      expect(majikKey.getPrivateKey("web3:btc")).toEqual(material.privateKey);
     });
   });
 
@@ -509,7 +514,7 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
 
   // ── ERROR HANDLING WHEN BITCOIN MATERIAL IS ABSENT ───────────────────────
   describe("Keys without Bitcoin material", () => {
-    it("should report hasBitcoin/hasBitcoinKeypair as false for a JSON-reconstructed (locked) key missing the public key field", () => {
+    it("should report hasBitcoinKeypair/hasBitcoinKeypair as false for a JSON-reconstructed (locked) key missing the public key field", () => {
       // fromJSON only carries btcPublicKey through if it was present in the
       // serialized JSON; toJSON() does include it, so simulate a legacy
       // pre-Bitcoin export by stripping the field.
@@ -520,7 +525,7 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
       const reconstructed = MajikKey.fromJSON(json);
 
       expect(reconstructed.isLocked).toBe(true);
-      expect(reconstructed.hasBitcoin).toBe(false);
+      expect(reconstructed.hasBitcoinKeypair).toBe(false);
       expect(reconstructed.hasBitcoinKeypair).toBe(false);
       expect(() => reconstructed.getBitcoinKeypairMaterial()).toThrow(
         /MajikKey is locked/,
@@ -530,19 +535,23 @@ describe("MajikKey Bitcoin Integration (Experimental)", () => {
     it(
       "should throw a distinct 're-import' error for an unlocked key that legitimately has no Bitcoin secret key",
       async () => {
-        // A JSON round-trip preserves btcPublicKey but drops the raw secret
-        // key by design (it's only ever held in memory or re-derived via
-        // importFromMnemonicBackup). Unlocking a reconstructed key without
-        // the encrypted blob present should surface the "re-import" guard
-        // rather than silently returning nothing.
         const json = majikKey.toJSON();
-        delete (json as any).encryptedBtcSecretKey;
+
+        const btcEntry = (json as any).keys?.find(
+          (entry: any) => entry.id === KeyId.BTC,
+        );
+
+        expect(btcEntry).toBeDefined();
+
+        delete btcEntry.encryptedSecretKey;
 
         const reconstructed = MajikKey.fromJSON(json);
         await reconstructed.unlock(PASSPHRASE);
 
-        expect(reconstructed.hasBitcoin).toBe(true); // public key still present
-        expect(() => reconstructed.getBtcSecretKey()).toThrow(
+        expect(reconstructed.hasKey(KeyId.BTC)).toBe(true);
+        expect(reconstructed.hasBitcoinKeypair).toBe(false);
+
+        expect(() => reconstructed.getPrivateKey(KeyId.BTC)).toThrow(
           /re-import via importFromMnemonicBackup/,
         );
       },
