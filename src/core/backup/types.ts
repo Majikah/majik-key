@@ -1,4 +1,4 @@
-import type { MnemonicLanguage } from "../crypto/wordlist";
+import type { MnemonicLanguage } from "../crypto/wordlist.js";
 
 /**
  * Bump this whenever the *shape* of MnemonicJSON or the zip layout

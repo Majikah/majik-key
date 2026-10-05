@@ -1,8 +1,8 @@
-import { MajikUser } from "@thezelijah/majik-user";
+import { MajikUser } from "@thezelijah/majik-user/dist/core/majik-user.js";
 
-import { hash } from "@stablelib/sha256";
-import { arrayToBase64 } from "../../utils";
-import { SerializedMajikContact } from "@majikah/majik-contact";
+import { hash } from "@stablelib/sha256/sha256.js";
+import { arrayToBase64 } from "../../utils.js";
+import { SerializedMajikContact } from "@majikah/majik-contact/dist/types.js";
 
 /**
  * Utility assertions

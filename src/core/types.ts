@@ -1,5 +1,5 @@
-import { MnemonicLanguage } from "./crypto/wordlist";
-import { KeyEntryJSON } from "./keys/types";
+import { MnemonicLanguage } from "./crypto/wordlist.js";
+import { KeyEntryJSON } from "./keys/types.js";
 
 /** ISO 8601 timestamp string, e.g. `"2026-07-11T00:00:00.000Z"`. */
 export type ISODateString = string;

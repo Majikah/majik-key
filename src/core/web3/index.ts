@@ -1,14 +1,14 @@
 // src/core/web3/index.ts
 
-export * from "./bitcoin/bitcoin";
-export * from "./solana/solana";
-export * from "./ethereum/ethereum";
+export * from "./bitcoin/bitcoin.js";
+export * from "./solana/solana.js";
+export * from "./ethereum/ethereum.js";
 
-export * from "./bitcoin/constants";
-export * from "./solana/constants";
-export * from "./ethereum/constants";
+export * from "./bitcoin/constants.js";
+export * from "./solana/constants.js";
+export * from "./ethereum/constants.js";
 
-export type * from "./types";
-export type * from "./bitcoin/types";
-export type * from "./solana/types";
-export type * from "./ethereum/types";
+export type * from "./types.js";
+export type * from "./bitcoin/types.js";
+export type * from "./solana/types.js";
+export type * from "./ethereum/types.js";

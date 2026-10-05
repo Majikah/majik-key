@@ -1,25 +1,25 @@
-import type { MnemonicLanguage } from "../crypto/wordlist";
+import type { MnemonicLanguage } from "../crypto/wordlist.js";
 
-import { validateMnemonicJSONShape } from "./validator";
+import { validateMnemonicJSONShape } from "./validator.js";
 import {
   InvalidBackupPNGError,
   InvalidBackupZipError,
   BackupIntegrityMismatchError,
-} from "./error";
+} from "./error.js";
 import {
   getJSZip,
   getMajikBytes,
   looksLikePNG,
   toSafeFileName,
   buildReadmeText,
-} from "./utils";
-import { MnemonicJSON } from "../types";
+} from "./utils.js";
+import { MnemonicJSON } from "../types.js";
 import {
   BACKUP_FORMAT_VERSION,
   CreateBackupParams,
   ToZipOptions,
-} from "./types";
-import { base64ToUtf8, utf8ToBase64 } from "../utils";
+} from "./types.js";
+import { base64ToUtf8, utf8ToBase64 } from "../utils.js";
 
 const BACKUP_JSON_FILENAME = "backup.json";
 const BACKUP_PNG_FILENAME = "backup.png";

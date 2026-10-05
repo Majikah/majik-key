@@ -16,8 +16,8 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { MajikKeyError } from "../../error";
-import type { EthereumSignature } from "./types";
+import { MajikKeyError } from "../../error.js";
+import type { EthereumSignature } from "./types.js";
 
 export interface EthereumKeypairMaterial {
   /** 32-byte secp256k1 private key. */

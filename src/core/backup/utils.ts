@@ -1,4 +1,4 @@
-import { MissingOptionalDependencyError } from "./error";
+import { MissingOptionalDependencyError } from "./error.js";
 
 // ────────────────────────────────────────────────────────────────
 // Lazy-loaded optional dependencies

@@ -30,12 +30,12 @@ import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import {
   MAJIK_BITCOIN_STANDARD_PATH,
   MAJIK_BITCOIN_DOMAIN_PATH,
-} from "./constants";
-import { hash } from "@stablelib/sha256";
-import { base58Encode } from "../utils";
-import { MajikKeyError } from "../../error";
+} from "./constants.js";
+import { hash } from "@stablelib/sha256/sha256.js";
+import { base58Encode } from "../utils.js";
+import { MajikKeyError } from "../../error.js";
 import { randomBytes } from "@noble/hashes/utils.js";
-import { BitcoinRawPublicKey } from "../../types";
+import { BitcoinRawPublicKey } from "../../types.js";
 
 export interface BitcoinKeypairMaterial {
   /** 32-byte secp256k1 private key. */

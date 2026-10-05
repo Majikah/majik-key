@@ -2,8 +2,8 @@
  * Validators
  * ------------------------------- */
 
-import { MajikKeyError } from "./error";
-import { MajikKeyJSON } from "./types";
+import { MajikKeyError } from "./error.js";
+import { MajikKeyJSON } from "./types.js";
 
 export class MajikKeyValidator {
   static validateMnemonic(mnemonic: string): void {

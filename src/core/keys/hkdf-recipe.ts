@@ -15,8 +15,8 @@
  */
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha512 } from "@noble/hashes/sha2.js";
-import { MajikKeyError } from "../error";
-import type { KeyId } from "./key-id";
+import { MajikKeyError } from "../error.js";
+import type { KeyId } from "./key-id.js";
 
 export const HKDF_SALT = "MajikKey/hkdf-sha512/v1";
 export const hkdfInfo = (id: KeyId) => `majik/v1/${id}`;

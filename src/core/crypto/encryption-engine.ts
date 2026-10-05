@@ -1,9 +1,15 @@
 // encryption-engine.ts from @majikah/majik-key
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { fingerprintFromPublicRaw } from "./crypto-provider";
-import { deriveKeys } from "../keys/key-impls";
-import { KeyId } from "../keys/key-id";
-import type { ED25519RawPublicKey, MajikKeyFingerprint, MLDSA87RawPublicKey, MLKEM768RawPublicKey, X25519RawKey } from "../types";
+import { fingerprintFromPublicRaw } from "./crypto-provider.js";
+import { deriveKeys } from "../keys/key-impls.js";
+import { KeyId } from "../keys/key-id.js";
+import type {
+  ED25519RawPublicKey,
+  MajikKeyFingerprint,
+  MLDSA87RawPublicKey,
+  MLKEM768RawPublicKey,
+  X25519RawKey,
+} from "../types.js";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -87,7 +93,10 @@ export class EncryptionEngine {
       rawBytes = anyKey.raw;
     } else {
       this.assertPublicKey(publicKey);
-      const exported = await crypto.subtle.exportKey("raw", publicKey as CryptoKey);
+      const exported = await crypto.subtle.exportKey(
+        "raw",
+        publicKey as CryptoKey,
+      );
       rawBytes = new Uint8Array(exported);
     }
     return fingerprintFromPublicRaw(rawBytes);

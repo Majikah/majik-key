@@ -5,10 +5,10 @@
  * handle obtained before lock() can never expose stale (zeroized) material or
  * keep secrets alive: after lock(), `.private` throws and `.public` still works.
  */
-import type { KeyFamily, KeyId } from "./key-id";
-import { KEY_ALGORITHMS } from "./registry";
-import type { KeyPurpose, KeyStatus } from "./types";
-import { arrayToBase64 } from "../utils";
+import type { KeyFamily, KeyId } from "./key-id.js";
+import { KEY_ALGORITHMS } from "./registry.js";
+import type { KeyPurpose, KeyStatus } from "./types.js";
+import { arrayToBase64 } from "../utils.js";
 
 export class MajikKeypair {
   constructor(

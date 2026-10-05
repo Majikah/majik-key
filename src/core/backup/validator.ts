@@ -1,5 +1,5 @@
-import { MnemonicJSON } from "../types";
-import { InvalidBackupJSONError } from "./error";
+import { MnemonicJSON } from "../types.js";
+import { InvalidBackupJSONError } from "./error.js";
 
 /**
  * Single source of truth for "is this a structurally valid

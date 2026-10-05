@@ -34,10 +34,10 @@ import {
   slh_dsa_shake_256f,
 } from "@noble/post-quantum/slh-dsa.js";
 import { falcon512, falcon1024 } from "@noble/post-quantum/falcon.js";
-import { deriveSeedHkdf } from "./hkdf-recipe";
-import { HDKey } from "@scure/bip32";
-import { MajikKeyError } from "../error";
-import { KeyId } from "./key-id";
+import { deriveSeedHkdf } from "./hkdf-recipe.js";
+import { HDKey } from "@scure/bip32/index.js";
+import { MajikKeyError } from "../error.js";
+import { KeyId } from "./key-id.js";
 
 export interface DerivedKeypair {
   publicKey: Uint8Array;

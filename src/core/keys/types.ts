@@ -1,4 +1,4 @@
-import type { KeyFamily, KeyId } from "./key-id";
+import type { KeyFamily, KeyId } from "./key-id.js";
 
 export type KeyPurpose = "kem" | "key-agreement" | "signature" | "wallet";
 

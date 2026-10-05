@@ -1,4 +1,4 @@
-import { ED25519RawPublicKey } from "../../types";
+import { ED25519RawPublicKey } from "../../types.js";
 
 /**
  * @experimental Web3 / blockchain integrations are experimental. This

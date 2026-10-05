@@ -1,11 +1,9 @@
-export * from "./majik-key";
-export type * from "./core/types";
+export * from "./majik-key.js";
+export type * from "./core/types.js";
 
-export * from "./core/error";
-export * from "./core/validator";
+export * from "./core/error.js";
+export * from "./core/validator.js";
 
-export * from "./core/web3";
+export * from "./core/web3/index.js";
 
-export * from "./core/backup";
-
-
+export * from "./core/backup/index.js";

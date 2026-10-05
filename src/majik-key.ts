@@ -29,32 +29,30 @@ import {
   fingerprintFromPublicRaw,
   generateRandomBytes,
   IV_LENGTH,
-} from "./core/crypto/crypto-provider";
+} from "./core/crypto/crypto-provider.js";
 import {
-  MajikContact,
   MajikContactData,
   MajikContactMeta,
-} from "@majikah/majik-contact";
+} from "@majikah/majik-contact/dist/types.js";
+import { MajikContact } from "@majikah/majik-contact/dist/contacts/majik-contact.js";
 import {
-  arrayBufferToBase64,
   arrayToBase64,
   base64ToArrayBuffer,
-  concatUint8Arrays,
   utf8ToBase64,
   base64ToUtf8,
   seedStringToArray,
   seedArrayToString,
   base64ToUint8Array,
-} from "./core/utils";
+} from "./core/utils.js";
 
 import {
   KDF_VERSION,
   LEGACY_MAJIK_MNEMONIC_SALT,
   BACKUP_SALT_WRITE_VERSION,
   backupSaltFor,
-} from "./core/crypto/constants";
-import { MajikKeyValidator } from "./core/validator";
-import { MajikKeyError } from "./core/error";
+} from "./core/crypto/constants.js";
+import { MajikKeyValidator } from "./core/validator.js";
+import { MajikKeyError } from "./core/error.js";
 import type {
   BitcoinRawPublicKey,
   ED25519RawPublicKey,
@@ -67,10 +65,10 @@ import type {
   MLKEM768RawPublicKey,
   MnemonicJSON,
   X25519RawKey,
-} from "./core/types";
-import { MajikMessageIdentity } from "./core/database/system/identity";
-import { MajikUser } from "@thezelijah/majik-user";
-import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist";
+} from "./core/types.js";
+import { MajikMessageIdentity } from "./core/database/system/identity.js";
+import { MajikUser } from "@thezelijah/majik-user/dist/core/majik-user.js";
+import { MnemonicLanguage, WORDLISTS } from "./core/crypto/wordlist.js";
 
 import {
   MajikKeyWeb3Namespace,
@@ -92,23 +90,23 @@ import {
   signEthereumHash,
   signEthereumMessage,
   toEthereumPrivateKeyHex,
-} from "./core/web3";
+} from "./core/web3/index.js";
 
-import { CORE_KEYS, KeyFamily, KeyId } from "./core/keys/key-id";
+import { CORE_KEYS, KeyFamily, KeyId } from "./core/keys/key-id.js";
 import {
   KEY_ALGORITHMS,
   enableableKeyIds,
   getAlgorithm,
   knownKeyIds,
   resolveRequestedKeys,
-} from "./core/keys/registry";
-import { deriveKeys } from "./core/keys/key-impls";
-import { KeyStore, KeySlot } from "./core/keys/key-store";
-import { KeyInfo, MajikKeypair } from "./core/keys/keypair-handle";
+} from "./core/keys/registry.js";
+import { deriveKeys } from "./core/keys/key-impls.js";
+import { KeyStore, KeySlot } from "./core/keys/key-store.js";
+import { KeyInfo, MajikKeypair } from "./core/keys/keypair-handle.js";
 
-export { KeyId, KeyFamily, CORE_KEYS } from "./core/keys/key-id";
-export { MajikKeypair } from "./core/keys/keypair-handle";
-export type { KeyInfo } from "./core/keys/keypair-handle";
+export { KeyId, KeyFamily, CORE_KEYS } from "./core/keys/key-id.js";
+export { MajikKeypair } from "./core/keys/keypair-handle.js";
+export type { KeyInfo } from "./core/keys/keypair-handle.js";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -256,7 +254,7 @@ export class MajikKey {
     this._fingerprint = init.fingerprint;
     this._salt = init.salt;
     this._backup = init.backup;
-    this._label = init.label || "";
+    this._label = init.label || ".js";
     this._timestamp = init.timestamp || new Date();
     this._kdfVersion = init.kdfVersion ?? KDF_VERSION.PBKDF2;
     this._mnemonicLanguage = init.mnemonicLanguage || "en";
@@ -804,7 +802,7 @@ export class MajikKey {
 
   updateLabel(newLabel: string): this {
     MajikKeyValidator.validateLabel(newLabel);
-    this._label = newLabel || "";
+    this._label = newLabel || ".js";
     return this;
   }
 

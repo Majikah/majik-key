@@ -2,14 +2,14 @@
  * registry.ts — Phase 1 skeleton: DEFINITIONS ONLY (no derive/encrypt yet).
  * Phase 2 attaches derive()/publicFromSecret() implementations to each entry.
  */
-import { MajikKeyError } from "../error";
-import { CORE_KEYS, KeyFamily, KeyId, keyFamilyOf } from "./key-id";
+import { MajikKeyError } from "../error.js";
+import { CORE_KEYS, KeyFamily, KeyId, keyFamilyOf } from "./key-id.js";
 import type {
   KeyAlgorithmDefinition,
   KeyDerivation,
   KeyPurpose,
   KeyStatus,
-} from "./types";
+} from "./types.js";
 
 const hkdf = (id: KeyId): KeyDerivation => ({
   scheme: "hkdf-sha512-v1",

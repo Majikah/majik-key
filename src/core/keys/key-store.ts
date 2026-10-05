@@ -15,13 +15,18 @@
  * It never derives a KDF key itself: callers pass resolver functions, so the
  * "one Argon2id run per operation" guarantee (phase 2a) stays in MajikKey.
  */
-import { MajikKeyError } from "../error";
-import { aesGcmDecrypt, aesGcmEncrypt, generateRandomBytes, IV_LENGTH } from "../crypto/crypto-provider";
-import { arrayToBase64, base64ToUint8Array } from "../utils";
-import { KeyId } from "./key-id";
-import { KEY_ALGORITHMS, getAlgorithm, knownKeyIds } from "./registry";
-import type { DerivedKeypair } from "./key-impls";
-import type { KeyDerivation, KeyEntryJSON } from "./types";
+import { MajikKeyError } from "../error.js";
+import {
+  aesGcmDecrypt,
+  aesGcmEncrypt,
+  generateRandomBytes,
+  IV_LENGTH,
+} from "../crypto/crypto-provider.js";
+import { arrayToBase64, base64ToUint8Array } from "../utils.js";
+import { KeyId } from "./key-id.js";
+import { KEY_ALGORITHMS, getAlgorithm, knownKeyIds } from "./registry.js";
+import type { DerivedKeypair } from "./key-impls.js";
+import type { KeyDerivation, KeyEntryJSON } from "./types.js";
 
 export interface KeySlot {
   id: KeyId;
@@ -51,7 +56,9 @@ export interface LegacyKeyJSON {
   encryptedBtcSecretKey?: string;
 }
 
-const LEGACY_FIELDS: ReadonlyArray<readonly [KeyId, keyof LegacyKeyJSON, keyof LegacyKeyJSON]> = [
+const LEGACY_FIELDS: ReadonlyArray<
+  readonly [KeyId, keyof LegacyKeyJSON, keyof LegacyKeyJSON]
+> = [
   [KeyId.X25519, "publicKey", "encryptedPrivateKey"],
   [KeyId.ML_KEM_768, "mlKemPublicKey", "encryptedMlKemSecretKey"],
   [KeyId.ED25519, "edPublicKey", "encryptedEdSecretKey"],
@@ -78,16 +85,25 @@ export class KeyStore {
   }
 
   static open(aesKey: Uint8Array, blob: Uint8Array, label: string): Uint8Array {
-    const plain = aesGcmDecrypt(aesKey, blob.slice(0, IV_LENGTH), blob.slice(IV_LENGTH));
+    const plain = aesGcmDecrypt(
+      aesKey,
+      blob.slice(0, IV_LENGTH),
+      blob.slice(IV_LENGTH),
+    );
     if (!plain)
-      throw new MajikKeyError(`Failed to decrypt ${label} — incorrect passphrase or corrupted data`);
+      throw new MajikKeyError(
+        `Failed to decrypt ${label} — incorrect passphrase or corrupted data`,
+      );
     return plain;
   }
 
   // ── construction ──────────────────────────────────────────────────────────
 
   /** Fresh derivation (create / importFromMnemonicBackup): seals every secret, returns UNLOCKED. */
-  static fromDerived(derived: ReadonlyMap<KeyId, DerivedKeypair>, aesKey: Uint8Array): KeyStore {
+  static fromDerived(
+    derived: ReadonlyMap<KeyId, DerivedKeypair>,
+    aesKey: Uint8Array,
+  ): KeyStore {
     const store = new KeyStore();
     for (const [id, kp] of derived) {
       store.slots.set(id, {
@@ -110,7 +126,8 @@ export class KeyStore {
     for (const e of entries) {
       if (!e || typeof e.id !== "string" || typeof e.publicKey !== "string")
         throw new MajikKeyError("Invalid key entry in `keys`");
-      if (seen.has(e.id)) throw new MajikKeyError(`Duplicate key entry "${e.id}"`);
+      if (seen.has(e.id))
+        throw new MajikKeyError(`Duplicate key entry "${e.id}"`);
       seen.add(e.id);
       if (!getAlgorithm(e.id)) {
         store.opaque.push(e); // from a newer version: keep, don't interpret
@@ -119,7 +136,9 @@ export class KeyStore {
       store.slots.set(e.id as KeyId, {
         id: e.id as KeyId,
         publicKey: base64ToUint8Array(e.publicKey),
-        encryptedSecretKey: e.encryptedSecretKey ? base64ToUint8Array(e.encryptedSecretKey) : undefined,
+        encryptedSecretKey: e.encryptedSecretKey
+          ? base64ToUint8Array(e.encryptedSecretKey)
+          : undefined,
         derivation: e.derivation,
         createdAt: e.createdAt,
       });
@@ -142,7 +161,9 @@ export class KeyStore {
       });
     }
     if (!store.slots.has(KeyId.X25519))
-      throw new MajikKeyError("Legacy key JSON is missing the X25519 public key");
+      throw new MajikKeyError(
+        "Legacy key JSON is missing the X25519 public key",
+      );
     return store;
   }
 
@@ -197,7 +218,8 @@ export class KeyStore {
   attachSecrets(secrets: ReadonlyMap<string, Uint8Array>): void {
     for (const [id, secret] of secrets) {
       const s = this.slots.get(id as KeyId);
-      if (!s) throw new MajikKeyError(`Secret supplied for unknown key "${id}"`);
+      if (!s)
+        throw new MajikKeyError(`Secret supplied for unknown key "${id}"`);
       s.secretKey = secret;
     }
     this._unlocked = true;
@@ -205,9 +227,11 @@ export class KeyStore {
 
   /** Raw secrets of every slot (only while unlocked). Used by toDangerousJSON. */
   exportSecrets(): Map<KeyId, Uint8Array> {
-    if (!this._unlocked) throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
+    if (!this._unlocked)
+      throw new MajikKeyError("MajikKey is locked. Call unlock() first.");
     const out = new Map<KeyId, Uint8Array>();
-    for (const s of this.slots.values()) if (s.secretKey) out.set(s.id, s.secretKey);
+    for (const s of this.slots.values())
+      if (s.secretKey) out.set(s.id, s.secretKey);
     return out;
   }
 
@@ -219,7 +243,14 @@ export class KeyStore {
     try {
       for (const slot of this.slots.values()) {
         if (!slot.encryptedSecretKey) continue;
-        staged.set(slot.id, KeyStore.open(keyFor(slot), slot.encryptedSecretKey, `${slot.id} secret key`));
+        staged.set(
+          slot.id,
+          KeyStore.open(
+            keyFor(slot),
+            slot.encryptedSecretKey,
+            `${slot.id} secret key`,
+          ),
+        );
       }
     } catch (e) {
       for (const p of staged.values()) zero(p);
@@ -240,7 +271,10 @@ export class KeyStore {
   // ── passphrase change / KDF migration (decrypt all → seal all → commit) ───
 
   /** Returns freshly sealed blobs under `newKey`. Mutates nothing. */
-  prepareReseal(oldKeyFor: KeyResolver, newKey: Uint8Array): Map<KeyId, Uint8Array> {
+  prepareReseal(
+    oldKeyFor: KeyResolver,
+    newKey: Uint8Array,
+  ): Map<KeyId, Uint8Array> {
     if (this.hasOpaqueSecrets)
       throw new MajikKeyError(
         "This account holds keys from a newer library version. Upgrade the library before changing the passphrase.",
@@ -248,7 +282,11 @@ export class KeyStore {
     const out = new Map<KeyId, Uint8Array>();
     for (const slot of this.slots.values()) {
       if (!slot.encryptedSecretKey) continue;
-      const plain = KeyStore.open(oldKeyFor(slot), slot.encryptedSecretKey, `${slot.id} secret key`);
+      const plain = KeyStore.open(
+        oldKeyFor(slot),
+        slot.encryptedSecretKey,
+        `${slot.id} secret key`,
+      );
       try {
         out.set(slot.id, KeyStore.seal(newKey, plain));
       } finally {
@@ -259,12 +297,14 @@ export class KeyStore {
   }
 
   commitReseal(blobs: ReadonlyMap<KeyId, Uint8Array>): void {
-    for (const [id, blob] of blobs) this.slots.get(id)!.encryptedSecretKey = blob;
+    for (const [id, blob] of blobs)
+      this.slots.get(id)!.encryptedSecretKey = blob;
   }
 
   /** Add keys after the fact (addKeys()). Caller has already sealed `secretKey`. */
   add(slot: KeySlot): void {
-    if (this.slots.has(slot.id)) throw new MajikKeyError(`"${slot.id}" already exists on this account`);
+    if (this.slots.has(slot.id))
+      throw new MajikKeyError(`"${slot.id}" already exists on this account`);
     this.slots.set(slot.id, slot);
   }
 
@@ -276,7 +316,9 @@ export class KeyStore {
       return {
         id,
         publicKey: arrayToBase64(s.publicKey),
-        ...(s.encryptedSecretKey ? { encryptedSecretKey: arrayToBase64(s.encryptedSecretKey) } : {}),
+        ...(s.encryptedSecretKey
+          ? { encryptedSecretKey: arrayToBase64(s.encryptedSecretKey) }
+          : {}),
         derivation: s.derivation,
         ...(s.createdAt ? { createdAt: s.createdAt } : {}),
       };
@@ -291,7 +333,8 @@ export class KeyStore {
       const s = this.slots.get(id);
       if (!s) continue;
       out[pubField] = arrayToBase64(s.publicKey);
-      if (s.encryptedSecretKey) out[encField] = arrayToBase64(s.encryptedSecretKey);
+      if (s.encryptedSecretKey)
+        out[encField] = arrayToBase64(s.encryptedSecretKey);
     }
     return out as LegacyKeyJSON;
   }

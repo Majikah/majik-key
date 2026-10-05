@@ -1,4 +1,4 @@
-import { BitcoinRawPublicKey } from "../../types";
+import { BitcoinRawPublicKey } from "../../types.js";
 
 /**
  * @experimental By default this is Majik's DOMAIN-SEPARATED Bitcoin key
