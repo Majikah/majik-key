@@ -1,12 +1,12 @@
 # Majik Key
 
-[![ZENODO](https://img.shields.io/badge/Read_the_Technical_Whitepaper_Here-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.21339132)
+[![ZENODO](https://img.shields.io/badge/Read_the_Technical_Whitepaper_Here-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.23208491)
 
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
 **Majik Key** turns a single BIP-39 mnemonic into a complete, **multi-algorithm cryptographic identity** — classical and post-quantum encryption, classical and post-quantum signing, and (experimentally) Bitcoin, Ethereum and Solana keys — encrypted at rest and ready to plug into the rest of the Majikah ecosystem.
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21339132.svg)](https://doi.org/10.5281/zenodo.21339132) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23208491.svg)](https://doi.org/10.5281/zenodo.23208491) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 
@@ -27,6 +27,9 @@
   - [🚨 If anything ever goes wrong, re-import your seed phrase 🚨](#-if-anything-ever-goes-wrong-re-import-your-seed-phrase-)
   - [Security Architecture](#security-architecture)
     - [How keys are derived](#how-keys-are-derived)
+  - [Performance \& Benchmarks](#performance--benchmarks)
+    - [Measured Test Duration (Node.js, pure-JS Argon2id)](#measured-test-duration-nodejs-pure-js-argon2id)
+    - [KDF Evaluations per Operation](#kdf-evaluations-per-operation)
   - [Architecture](#architecture)
   - [Powering the Majikah Ecosystem](#powering-the-majikah-ecosystem)
     - [Majik Signature — Flagship](#majik-signature--flagship)
@@ -295,6 +298,52 @@ The legacy derivation recipes for X25519, Ed25519, ML-KEM-768, ML-DSA-87 and Bit
 | Everything else (ML-KEM-512/1024, ML-DSA-44/65, SLH-DSA, Falcon) | `HKDF-SHA512(seed, salt = "MajikKey/hkdf-sha512/v1", info = "majik/v1/<key id>")` → the algorithm's seed | stable, pinned by test vectors |
 
 Because each algorithm gets its own HKDF `info` string, no two keys ever receive related seed material, and adding a new algorithm can never change an existing key. Each stored key also records its own `derivation` recipe in the JSON.
+
+---
+
+## Performance & Benchmarks
+
+Starting in `v1.0.0`, key derivation uses a single vault-key KDF evaluation per operation. Instead of re-running Argon2id for every individual key in the account, the vault key is derived **once**, reducing Argon2id evaluations by up to **80%** and wall-clock execution time by **~68%**.
+
+### Measured Test Duration (Node.js, pure-JS Argon2id)
+
+```mermaid
+xychart-beta
+    title "Measured test duration in seconds (0.7.x vs 1.0.0)"
+    x-axis ["create()", "create + unlock", "create + import", "full vector suite"]
+    y-axis "Seconds (wall clock)" 0 --> 30
+    bar [5.6, 9.7, 10.5, 25.9]
+    bar [2.0, 2.7, 3.6, 8.3]
+```
+
+| Operation | 0.7.x | 1.0.0 | Improvement |
+| :--- | :--- | :--- | :--- |
+| `create()` | 5.6s | **2.0s** | ⚡ **64% faster** |
+| `create + unlock` | 9.7s | **2.7s** | ⚡ **72% faster** |
+| `create + import backup` | 10.5s | **3.6s** | ⚡ **66% faster** |
+| `full vector suite` | 25.9s | **8.3s** | ⚡ **68% faster** |
+
+---
+
+### KDF Evaluations per Operation
+
+```mermaid
+xychart-beta
+    title "Argon2id evaluations per operation (0.7.x vs 1.0.0)"
+    x-axis ["create", "unlock", "update passphrase", "import backup"]
+    y-axis "Evaluations" 0 --> 10
+    bar [6, 5, 10, 6]
+    bar [2, 1, 2, 2]
+```
+
+| Operation | 0.7.x | 1.0.0 | Reduction |
+| :--- | :--- | :--- | :--- |
+| `create` | 6 evaluations | **2 evaluations** | **67% reduction** |
+| `unlock` | 5 evaluations | **1 evaluation** | **80% reduction** |
+| `update passphrase` | 10 evaluations | **2 evaluations** | **80% reduction** |
+| `import backup` | 6 evaluations | **2 evaluations** | **67% reduction** |
+
+*Figure 3. Measured test duration and Argon2id evaluations per operation, 0.7.x versus 1.0.0.*
 
 ---
 
@@ -793,7 +842,7 @@ Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https:/
 
 **Project Repository**: [https://github.com/Majikah/majik-signature](https://github.com/Majikah/majik-signature)
 
-**Technical Whitepaper**: [https://zenodo.org/records/21339132](https://zenodo.org/records/21339132)
+**Technical Whitepaper**: [https://zenodo.org/records/23208491](https://zenodo.org/records/23208491)
 
 ---
 

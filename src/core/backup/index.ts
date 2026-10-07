@@ -1,7 +1,12 @@
 export { MajikKeyBackup } from "./majik-key-backup.js";
 
-export type { BackupSource, CreateBackupParams, ToZipOptions } from "./types.js";
+export type {
+  BackupSource,
+  CreateBackupParams,
+  ToZipOptions,
+} from "./types.js";
 export { BACKUP_FORMAT_VERSION } from "./types.js";
+export * from "./utils.js";
 
 export {
   MajikKeyBackupError,

@@ -13,6 +13,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./backup": {
+      "types": "./dist/core/backup/index.d.ts",
+      "import": "./dist/core/backup/index.js",
+      "default": "./dist/core/backup/index.js"
+    },
+    "./web3": {
+      "types": "./dist/core/web3/index.d.ts",
+      "import": "./dist/core/web3/index.js",
+      "default": "./dist/core/web3/index.js"
     }
   },
   "files": [
