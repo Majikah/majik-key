@@ -1,6 +1,11 @@
 # Majik Key
 
 [![ZENODO](https://img.shields.io/badge/Read_the_Technical_Whitepaper_Here-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.23208491)
+[![MAJIKAH](https://img.shields.io/badge/Read_the_Full_Majikah_Article_Here-EA7F05?style=for-the-badge)](http://majikah.solutions/articles/majik-key-whitepaper)
+
+
+
+
 
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
