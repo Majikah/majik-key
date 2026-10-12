@@ -1,7 +1,5 @@
 # Majik Key
-
-[![ZENODO](https://img.shields.io/badge/Read_the_Technical_Whitepaper_Here-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.23208491)
-[![MAJIKAH](https://img.shields.io/badge/Read_the_Full_Majikah_Article_Here-EA7F05?style=for-the-badge)](http://majikah.solutions/articles/majik-key-whitepaper)
+[![Zenodo](https://img.shields.io/badge/Technical%20Whitepaper-Zenodo-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.23208491) [![Majikah](https://img.shields.io/badge/Read%20the%20Article-Majikah-EA7F05?style=for-the-badge)](https://majikah.solutions/articles/majik-key-whitepaper)
 
 
 
@@ -21,6 +19,10 @@
   - [Table of Contents](#table-of-contents)
   - [Why Majik Key](#why-majik-key)
   - [What you get by default](#what-you-get-by-default)
+  - [Command-Line Interface](#command-line-interface)
+    - [`majik-key` — Create, Manage, Export, and Restore Keys](#majik-key--create-manage-export-and-restore-keys)
+    - [Run with `npx`](#run-with-npx)
+    - [CLI Documentation](#cli-documentation)
   - [Quick Start](#quick-start)
   - [Multi-key support](#multi-key-support)
     - [Supported keys](#supported-keys)
@@ -110,6 +112,77 @@ const key = await MajikKey.create(mnemonic, passphrase, 'My Account', {
 ```
 
 `keys` is **additive**: the core four are always included, duplicates collapse, and an unusable id (reserved, unsupported, unknown) is rejected up front, before any derivation work happens.
+
+---
+
+## Command-Line Interface
+
+### `majik-key` — Create, Manage, Export, and Restore Keys
+
+Majik Key includes a command-line interface (CLI) for managing cryptographic identities and keypairs directly from your terminal, without writing code.
+
+The `majik-key` CLI supports:
+
+* **Key generation and recovery** — Generate new keys with a 12- or 24-word BIP-39 recovery phrase, create keys from an existing phrase, or restore from supported backups.
+* **Classical and post-quantum cryptography** — Manage X25519, Ed25519, ML-KEM, ML-DSA, and supported optional algorithms.
+* **Key inspection** — View key metadata, fingerprints, and available keypairs without entering your passphrase.
+* **Key management** — Update labels, change passphrases, migrate legacy keys, and add supported keypairs.
+* **Export and portability** — Export passphrase-encrypted key files, public contact JSON, or explicitly requested unencrypted private-key JSON.
+* **Recovery backups** — Create JSON, PNG, and ZIP backups containing recovery-phrase material.
+* **Automation and scripting** — Use machine-readable `--json` output, standard input, and environment variables for supported non-interactive workflows.
+
+### Run with `npx`
+
+No global installation required:
+
+```bash
+npx @majikah/majik-key --help
+```
+
+Generate a new key:
+
+```bash
+npx @majikah/majik-key generate
+```
+
+Inspect an existing key:
+
+```bash
+npx @majikah/majik-key info ./majik-key.json
+```
+
+List its keypairs:
+
+```bash
+npx @majikah/majik-key keys ./majik-key.json
+```
+
+Restore a key from a supported backup:
+
+```bash
+npx @majikah/majik-key import ./backup.zip
+```
+
+Or install globally and use the `majik-key` command directly:
+
+```bash
+npm install -g @majikah/majik-key
+```
+
+```bash
+majik-key --help
+```
+
+For supported non-interactive workflows, passphrases can be supplied through `MAJIK_KEY_PASSPHRASE` or standard input using `--passphrase-stdin`. The CLI deliberately does not accept passphrases as command-line arguments, helping prevent secrets from being exposed through shell history.
+
+**Security note:** Recovery phrases and backups containing recovery-phrase material are sensitive secrets. Protect them offline, and never share them or commit them to version control.
+
+### CLI Documentation
+
+For the complete command reference, installation instructions, key lifecycle workflows, supported algorithms, passphrase handling, export formats, recovery procedures, automation examples, exit codes, and security guidance, see the dedicated CLI documentation:
+
+[![Read the Majik Key CLI Documentation](https://img.shields.io/badge/Read_the_CLI_Documentation-EA7F05?style=for-the-badge)](./CLI_README.md)
+
 
 ---
 
@@ -845,7 +918,7 @@ Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https:/
 
 **GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
 
-**Project Repository**: [https://github.com/Majikah/majik-signature](https://github.com/Majikah/majik-signature)
+**Project Repository**: [https://github.com/Majikah/majik-key](https://github.com/Majikah/majik-key)
 
 **Technical Whitepaper**: [https://zenodo.org/records/23208491](https://zenodo.org/records/23208491)
 

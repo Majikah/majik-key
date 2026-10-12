@@ -23,7 +23,15 @@
       "types": "./dist/core/web3/index.d.ts",
       "import": "./dist/core/web3/index.js",
       "default": "./dist/core/web3/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
     }
+  },
+  "bin": {
+    "mjkkey": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -78,7 +86,8 @@
     "test:backup": "vitest run test/backup/majik-key-backup.test.ts",
     "test:keystore": "vitest run test/keys/key-store.test.ts",
     "test:keyimpls": "vitest run test/keys/key-impls.test.ts",
-    "test:vectors": "vitest run test/test-vectors.test.ts"
+    "test:vectors": "vitest run test/test-vectors.test.ts",
+    "test:cli": "vitest run test/cli.test.ts"
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.2.0",
@@ -94,6 +103,7 @@
     "@stablelib/sha256": "^2.0.1",
     "@stablelib/x25519": "^2.0.1",
     "@thezelijah/majik-user": "^1.1.0",
+    "commander": "^15.0.0",
     "ed2curve": "^0.3.0",
     "hash-wasm": "^4.12.0"
   },
