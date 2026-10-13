@@ -1,15 +1,14 @@
 # Majik Key
+
+[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white&style=for-the-badge)](https://thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=for-the-badge&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
+
+![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) 
+
 [![Zenodo](https://img.shields.io/badge/Technical%20Whitepaper-Zenodo-1682D4?style=for-the-badge&logo=zenodo&logoColor=white)](https://doi.org/10.5281/zenodo.23208491) [![Majikah](https://img.shields.io/badge/Read%20the%20Article-Majikah-EA7F05?style=for-the-badge)](https://majikah.solutions/articles/majik-key-whitepaper)
-
-
-
-
-
-[![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 
 **Majik Key** turns a single BIP-39 mnemonic into a complete, **multi-algorithm cryptographic identity** — classical and post-quantum encryption, classical and post-quantum signing, and (experimentally) Bitcoin, Ethereum and Solana keys — encrypted at rest and ready to plug into the rest of the Majikah ecosystem.
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23208491.svg)](https://doi.org/10.5281/zenodo.23208491) ![npm](https://img.shields.io/npm/v/@majikah/majik-key) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-key) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 
 ---
 
@@ -394,12 +393,12 @@ xychart-beta
     bar [2.0, 2.7, 3.6, 8.3]
 ```
 
-| Operation | 0.7.x | 1.0.0 | Improvement |
-| :--- | :--- | :--- | :--- |
-| `create()` | 5.6s | **2.0s** | ⚡ **64% faster** |
-| `create + unlock` | 9.7s | **2.7s** | ⚡ **72% faster** |
+| Operation                | 0.7.x | 1.0.0    | Improvement      |
+| :----------------------- | :---- | :------- | :--------------- |
+| `create()`               | 5.6s  | **2.0s** | ⚡ **64% faster** |
+| `create + unlock`        | 9.7s  | **2.7s** | ⚡ **72% faster** |
 | `create + import backup` | 10.5s | **3.6s** | ⚡ **66% faster** |
-| `full vector suite` | 25.9s | **8.3s** | ⚡ **68% faster** |
+| `full vector suite`      | 25.9s | **8.3s** | ⚡ **68% faster** |
 
 ---
 
@@ -414,12 +413,12 @@ xychart-beta
     bar [2, 1, 2, 2]
 ```
 
-| Operation | 0.7.x | 1.0.0 | Reduction |
-| :--- | :--- | :--- | :--- |
-| `create` | 6 evaluations | **2 evaluations** | **67% reduction** |
-| `unlock` | 5 evaluations | **1 evaluation** | **80% reduction** |
+| Operation           | 0.7.x          | 1.0.0             | Reduction         |
+| :------------------ | :------------- | :---------------- | :---------------- |
+| `create`            | 6 evaluations  | **2 evaluations** | **67% reduction** |
+| `unlock`            | 5 evaluations  | **1 evaluation**  | **80% reduction** |
 | `update passphrase` | 10 evaluations | **2 evaluations** | **80% reduction** |
-| `import backup` | 6 evaluations | **2 evaluations** | **67% reduction** |
+| `import backup`     | 6 evaluations  | **2 evaluations** | **67% reduction** |
 
 *Figure 3. Measured test duration and Argon2id evaluations per operation, 0.7.x versus 1.0.0.*
 
