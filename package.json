@@ -67,8 +67,12 @@
     "url": "https://github.com/Majikah/majik-key/issues"
   },
   "scripts": {
+    "update:dev": "npm i -D @types/node@latest vitest@latest",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "docs": "typedoc",
+    "docs:watch": "typedoc --watch",
+    "docs:api": "typedoc && node --input-type=module -e \"import { copyFileSync } from 'node:fs'; copyFileSync('docs/api.json', 'api.json')\"",
     "prepublishOnly": "npm run build",
     "package": "npm run build && npm version patch && git push && git push --tags",
     "test": "vitest run",
@@ -114,7 +118,8 @@
     "@types/ed2curve": "^0.2.4",
     "@types/node": "^26.6.2",
     "jszip": "^3.10.2",
-    "typescript": "^7.0.2",
+    "typedoc": "^0.28.20",
+    "typescript": "~6.0.3",
     "vitest": "^5.0.1"
   },
   "peerDependencies": {
